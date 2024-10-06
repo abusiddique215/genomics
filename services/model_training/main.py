@@ -29,7 +29,7 @@ async def train_model():
         X, y = prepare_data(data)
         
         # Create and train the model
-        model = create_model()
+        model = create_model(input_shape=X.shape[1])
         history = model.fit(X, y, epochs=10, validation_split=0.2, callbacks=[tf.keras.callbacks.EarlyStopping(patience=3)])
         
         # Save the trained model
@@ -63,9 +63,9 @@ def prepare_data(data):
     y = data['target']
     return X, y
 
-def create_model():
+def create_model(input_shape):
     model = tf.keras.Sequential([
-        tf.keras.layers.Dense(64, activation='relu', input_shape=(X.shape[1],)),
+        tf.keras.layers.Dense(64, activation='relu', input_shape=(input_shape,)),
         tf.keras.layers.Dense(32, activation='relu'),
         tf.keras.layers.Dense(1, activation='sigmoid')
     ])
