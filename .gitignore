@@ -26,10 +26,6 @@ ENV/
 env/
 genomics/
 
-# But allow these specific files
-!genomics/lib/python3.10/site-packages/clang/native/libclang.dylib
-!genomics/lib/python3.10/site-packages/tensorflow/libtensorflow_cc.2.dylib
-
 # IDEs and Editors
 .vscode/
 .idea/
@@ -68,3 +64,8 @@ Thumbs.db
 *.bak
 *.tmp
 *.temp
+
+# Large files
+*.dylib
+*.so
+*.dll
