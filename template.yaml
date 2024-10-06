@@ -1,0 +1,74 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Genomics Treatment API
+
+Resources:
+  DataIngestionFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: services/data_ingestion/
+      Handler: main.app
+      Runtime: python3.8
+      Events:
+        HttpPost:
+          Type: Api
+          Properties:
+            Path: /ingest
+            Method: post
+
+  ModelTrainingFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: services/model_training/
+      Handler: main.app
+      Runtime: python3.8
+      Events:
+        HttpPost:
+          Type: Api
+          Properties:
+            Path: /train
+            Method: post
+
+  TreatmentPredictionFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: services/treatment_prediction/
+      Handler: main.app
+      Runtime: python3.8
+      Events:
+        HttpPost:
+          Type: Api
+          Properties:
+            Path: /predict
+            Method: post
+
+  PatientManagementFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: services/patient_management/
+      Handler: main.app
+      Runtime: python3.8
+      Events:
+        HttpPost:
+          Type: Api
+          Properties:
+            Path: /patient
+            Method: post
+
+  PowerBIIntegrationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: services/powerbi_integration/
+      Handler: main.app
+      Runtime: python3.8
+      Events:
+        HttpPost:
+          Type: Api
+          Properties:
+            Path: /update_dashboard
+            Method: post
+
+Outputs:
+  ApiEndpoint:
+    Description: "API Gateway endpoint URL for Prod stage"
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/"
