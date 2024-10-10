@@ -1,13 +1,12 @@
-from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 import pandas as pd
 import boto3
-from botocore.exceptions import ClientError
-from services.logging.logger import log_event, log_error
-import io
-from Bio import SeqIO
+from services.utils.logging import setup_logging
+import os
 
 app = FastAPI()
+logger = setup_logging()
 
 # Add CORS middleware
 app.add_middleware(
@@ -19,48 +18,38 @@ app.add_middleware(
 )
 
 s3 = boto3.client('s3')
+BUCKET_NAME = os.getenv('S3_BUCKET_NAME')
 
-@app.post("/ingest")
+@app.post("/ingest/")
 async def ingest_data(file: UploadFile = File(...)):
     try:
-        # Read the file content
         content = await file.read()
+        df = pd.read_csv(content)
         
-        # Determine file type and preprocess accordingly
-        if file.filename.endswith('.csv'):
-            df = pd.read_csv(io.StringIO(content.decode('utf-8')))
-        elif file.filename.endswith('.fasta'):
-            records = list(SeqIO.parse(io.StringIO(content.decode('utf-8')), "fasta"))
-            df = pd.DataFrame([(rec.id, str(rec.seq)) for rec in records], columns=['id', 'sequence'])
-        else:
-            raise HTTPException(status_code=400, detail="Unsupported file format")
+        # Process and store the data in S3
+        bucket_name = 'your-s3-bucket-name'
+        file_name = f'raw_data/{file.filename}'
+        s3.put_object(Bucket=bucket_name, Key=file_name, Body=content)
         
-        # Preprocess the data (implement your preprocessing steps here)
-        preprocessed_data = preprocess_data(df)
-        
-        # Save preprocessed data to S3
-        s3.put_object(Bucket='genomics-data', Key=f'preprocessed/{file.filename}', Body=preprocessed_data.to_csv(index=False))
-        
-        # Log the ingestion event
-        log_event("data_ingestion", {"filename": file.filename, "size": len(content), "preprocessing": "completed"})
-        
-        return {"message": "Data ingested and preprocessed successfully"}
+        logger.info(f"Ingested file: {file.filename}")
+        return {"message": "Data ingested successfully"}
     except Exception as e:
-        log_error(str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error ingesting data: {str(e)}")
+        return {"error": str(e)}
 
-def preprocess_data(df):
-    # Handle missing values
-    df = df.fillna(df.mean())
-    
-    # Normalize numerical columns
-    numerical_columns = df.select_dtypes(include=['float64', 'int64']).columns
-    df[numerical_columns] = (df[numerical_columns] - df[numerical_columns].mean()) / df[numerical_columns].std()
-    
-    # Perform feature extraction (example: PCA)
-    # from sklearn.decomposition import PCA
-    # pca = PCA(n_components=10)
-    # df_pca = pd.DataFrame(pca.fit_transform(df[numerical_columns]))
-    # df = pd.concat([df, df_pca], axis=1)
-    
-    return df
+@app.post("/upload/")
+async def upload_file(file: UploadFile = File(...)):
+    try:
+        s3.upload_fileobj(file.file, BUCKET_NAME, file.filename)
+        return {"message": f"File {file.filename} uploaded successfully"}
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.get("/files/")
+async def list_files():
+    try:
+        response = s3.list_objects_v2(Bucket=BUCKET_NAME)
+        files = [obj['Key'] for obj in response.get('Contents', [])]
+        return {"files": files}
+    except Exception as e:
+        return {"error": str(e)}

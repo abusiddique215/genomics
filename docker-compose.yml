@@ -1,0 +1,53 @@
+version: '3'
+services:
+  data_ingestion:
+    build: ./services/data_ingestion
+    ports:
+      - "8001:8000"
+    environment:
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}
+      - S3_BUCKET_NAME=${S3_BUCKET_NAME}
+  
+  preprocessing:
+    build: ./services/preprocessing
+    ports:
+      - "8002:8000"
+    environment:
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+  
+  ai_model:
+    build: ./services/ai_model
+    ports:
+      - "8003:8000"
+    environment:
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+  
+  treatment_prediction:
+    build: ./services/treatment_prediction
+    ports:
+      - "8004:8000"
+    environment:
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+  
+  dashboard:
+    build: ./services/dashboard
+    ports:
+      - "8005:8000"
+    environment:
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}
+  
+  powerbi_integration:
+    build: ./services/powerbi_integration
+    ports:
+      - "8006:8000"
+  patient_tracking:
+    build: ./services/patient_tracking
+    ports:
+      - "8007:8000"

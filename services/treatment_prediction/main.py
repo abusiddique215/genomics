@@ -1,12 +1,13 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 import tensorflow as tf
 import boto3
 import numpy as np
-from pydantic import BaseModel
-from services.logging.logger import log_event, log_error
+from services.utils.logging import setup_logging
 
 app = FastAPI()
+logger = setup_logging()
 
 # Add CORS middleware
 app.add_middleware(
@@ -20,45 +21,25 @@ app.add_middleware(
 s3 = boto3.client('s3')
 
 class PatientData(BaseModel):
-    id: str
     features: list[float]
 
-@app.post("/predict")
-async def predict_treatment(patient_data: PatientData):
+@app.post("/predict/{model_name}")
+async def predict_treatment(model_name: str, patient: PatientData):
     try:
-        model = load_latest_model()
-        input_data = np.array(patient_data.features).reshape(1, -1)
+        # Download model from S3
+        bucket_name = 'your-s3-bucket-name'
+        model_path = f'/tmp/{model_name}.h5'
+        s3.download_file(bucket_name, f'models/{model_name}.h5', model_path)
         
+        # Load the model
+        model = tf.keras.models.load_model(model_path)
+        
+        # Make prediction
+        input_data = np.array(patient.features).reshape(1, -1)
         prediction = model.predict(input_data)
         
-        treatment_recommendations = process_prediction(prediction)
-        
-        log_event("treatment_prediction", {
-            "patient_id": patient_data.id,
-            "prediction": prediction.tolist(),
-            "recommendations": treatment_recommendations
-        })
-        
-        return {"recommendations": treatment_recommendations}
+        logger.info(f"Prediction made for model: {model_name}")
+        return {"treatment_efficacy": float(prediction[0][0])}
     except Exception as e:
-        log_error(str(e))
+        logger.error(f"Error making prediction: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
-
-def load_latest_model():
-    # Get the latest model file from S3
-    response = s3.list_objects_v2(Bucket='genomics-models', Prefix='model_')
-    latest_model = max(response['Contents'], key=lambda x: x['LastModified'])
-    
-    # Download the model file
-    s3.download_file('genomics-models', latest_model['Key'], 'latest_model.h5')
-    
-    # Load the model
-    return tf.keras.models.load_model('latest_model.h5')
-
-def process_prediction(prediction):
-    # Convert prediction to treatment recommendations
-    threshold = 0.5
-    if prediction[0][0] > threshold:
-        return {"treatment": "Treatment A", "efficacy": "High"}
-    else:
-        return {"treatment": "Treatment B", "efficacy": "Medium"}

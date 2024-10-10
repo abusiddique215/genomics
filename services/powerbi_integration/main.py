@@ -1,11 +1,12 @@
+import os
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-import pandas as pd
-import requests
 from pydantic import BaseModel
-from services.logging.logger import log_event, log_error
+import requests
+from services.utils.logging import setup_logging
 
 app = FastAPI()
+logger = setup_logging()
 
 # Add CORS middleware
 app.add_middleware(
@@ -16,63 +17,30 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Power BI API configuration
 POWER_BI_API_URL = "https://api.powerbi.com/v1.0/myorg"
-POWER_BI_DATASET_ID = "your_dataset_id"
-ACCESS_TOKEN = "your_access_token"  # You should use a more secure way to store this
+POWER_BI_DATASET_ID = os.getenv("POWER_BI_DATASET_ID")
+POWER_BI_TABLE_NAME = os.getenv("POWER_BI_TABLE_NAME")
+POWER_BI_ACCESS_TOKEN = os.getenv("POWER_BI_ACCESS_TOKEN")
 
-class DashboardData(BaseModel):
-    data: dict
+class PowerBIData(BaseModel):
+    rows: list
 
-@app.post("/update_dashboard")
-async def update_dashboard(data: DashboardData):
+@app.post("/update-powerbi")
+async def update_powerbi(data: PowerBIData):
     try:
-        # Convert data to DataFrame
-        df = pd.DataFrame(data.data)
-        
-        # Update Power BI dataset
-        response = update_powerbi_dataset(df)
+        url = f"{POWER_BI_API_URL}/datasets/{POWER_BI_DATASET_ID}/tables/{POWER_BI_TABLE_NAME}/rows"
+        headers = {
+            "Authorization": f"Bearer {POWER_BI_ACCESS_TOKEN}",
+            "Content-Type": "application/json"
+        }
+        response = requests.post(url, headers=headers, json=data.dict())
         
         if response.status_code == 200:
-            log_event("dashboard_update", {"status": "success"})
-            return {"message": "Dashboard updated successfully"}
+            logger.info("Data successfully sent to Power BI")
+            return {"message": "Data updated in Power BI successfully"}
         else:
-            log_error(f"Failed to update dashboard: {response.text}")
-            raise HTTPException(status_code=500, detail="Failed to update dashboard")
+            logger.error(f"Failed to update Power BI: {response.text}")
+            raise HTTPException(status_code=response.status_code, detail="Failed to update Power BI")
     except Exception as e:
-        log_error(str(e))
+        logger.error(f"Error updating Power BI: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/generate_report")
-async def generate_report(report_config: dict):
-    try:
-        # Generate report using Power BI API
-        response = generate_powerbi_report(report_config)
-        
-        if response.status_code == 200:
-            report_url = response.json().get('reportUrl')
-            log_event("report_generation", {"status": "success", "report_url": report_url})
-            return {"report_url": report_url}
-        else:
-            log_error(f"Failed to generate report: {response.text}")
-            raise HTTPException(status_code=500, detail="Failed to generate report")
-    except Exception as e:
-        log_error(str(e))
-        raise HTTPException(status_code=500, detail=str(e))
-
-def update_powerbi_dataset(df):
-    url = f"{POWER_BI_API_URL}/datasets/{POWER_BI_DATASET_ID}/tables/YourTableName/rows"
-    headers = {
-        "Authorization": f"Bearer {ACCESS_TOKEN}",
-        "Content-Type": "application/json"
-    }
-    data = df.to_dict(orient='records')
-    return requests.post(url, headers=headers, json={"rows": data})
-
-def generate_powerbi_report(report_config):
-    url = f"{POWER_BI_API_URL}/reports"
-    headers = {
-        "Authorization": f"Bearer {ACCESS_TOKEN}",
-        "Content-Type": "application/json"
-    }
-    return requests.post(url, headers=headers, json=report_config)

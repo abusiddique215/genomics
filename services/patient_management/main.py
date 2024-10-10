@@ -3,9 +3,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import boto3
 from botocore.exceptions import ClientError
-from services.logging.logger import log_event, log_error
+from services.utils.logging import setup_logging
 
 app = FastAPI()
+logger = setup_logging()
 
 # Add CORS middleware
 app.add_middleware(
@@ -21,17 +22,19 @@ table = dynamodb.Table('Patients')
 
 class PatientData(BaseModel):
     id: str
-    medical_history: dict
+    name: str
+    age: int
     genomic_data: dict
+    medical_history: dict
 
 @app.post("/patient")
 async def create_patient(patient: PatientData):
     try:
         response = table.put_item(Item=patient.dict())
-        log_event("patient_created", {"patient_id": patient.id})
-        return {"message": "Patient data created successfully"}
+        logger.info(f"Patient created: {patient.id}")
+        return {"message": "Patient created successfully"}
     except ClientError as e:
-        log_error(str(e))
+        logger.error(f"Error creating patient: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/patient/{patient_id}")
@@ -39,11 +42,12 @@ async def get_patient(patient_id: str):
     try:
         response = table.get_item(Key={'id': patient_id})
         if 'Item' not in response:
+            logger.warning(f"Patient not found: {patient_id}")
             raise HTTPException(status_code=404, detail="Patient not found")
-        log_event("patient_retrieved", {"patient_id": patient_id})
+        logger.info(f"Patient retrieved: {patient_id}")
         return response['Item']
     except ClientError as e:
-        log_error(str(e))
+        logger.error(f"Error retrieving patient: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.put("/patient/{patient_id}")
@@ -51,23 +55,34 @@ async def update_patient(patient_id: str, patient: PatientData):
     try:
         response = table.update_item(
             Key={'id': patient_id},
-            UpdateExpression="set medical_history=:mh, genomic_data=:gd",
+            UpdateExpression="set name=:n, age=:a, genomic_data=:g, medical_history=:m",
             ExpressionAttributeValues={
-                ':mh': patient.medical_history,
-                ':gd': patient.genomic_data
+                ':n': patient.name,
+                ':a': patient.age,
+                ':g': patient.genomic_data,
+                ':m': patient.medical_history
             },
             ReturnValues="UPDATED_NEW"
         )
-        log_event("patient_updated", {"patient_id": patient_id})
-        return {"message": "Patient data updated successfully"}
+        logger.info(f"Patient updated: {patient_id}")
+        return {"message": "Patient updated successfully"}
     except ClientError as e:
-        log_error(str(e))
+        logger.error(f"Error updating patient: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-def log_patient_update(patient_id, action):
-    # Implement logging logic for patient updates
-    pass
+@app.get("/test-aws-connection")
+async def test_aws_connection():
+    try:
+        # Test DynamoDB connection
+        dynamodb = boto3.resource('dynamodb')
+        table = dynamodb.Table('Patients')
+        table.scan(Limit=1)
 
-def log_error(error_message):
-    # Implement error logging logic
-    pass
+        # Test S3 connection
+        s3 = boto3.client('s3')
+        s3.list_buckets()
+
+        return {"message": "AWS connection successful"}
+    except ClientError as e:
+        logger.error(f"AWS connection error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"AWS connection error: {str(e)}")
