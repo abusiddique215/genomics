@@ -51,3 +51,16 @@ services:
     build: ./services/patient_tracking
     ports:
       - "8007:8000"
+  rag_pipeline:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: uvicorn services.rag_pipeline.main:app --host 0.0.0.0 --port 8006
+    volumes:
+      - .:/app
+    ports:
+      - "8006:8006"
+    env_file:
+      - .env
+    depends_on:
+      - patient_management

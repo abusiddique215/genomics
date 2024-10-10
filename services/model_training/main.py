@@ -4,9 +4,10 @@ import tensorflow as tf
 import boto3
 import pandas as pd
 from datetime import datetime
-from services.logging.logger import log_event, log_error
+from services.logging.logger import setup_logging, log_event, log_error
 
 app = FastAPI()
+logger = setup_logging()
 
 # Add CORS middleware
 app.add_middleware(
@@ -38,7 +39,7 @@ async def train_model():
         s3.upload_file(model_path, 'genomics-models', model_path)
         
         # Log training event
-        log_event("model_training", {
+        log_event(logger, "model_training", {
             "model_path": model_path,
             "epochs": len(history.history['loss']),
             "final_loss": history.history['loss'][-1],
@@ -47,7 +48,7 @@ async def train_model():
         
         return {"message": "Model trained and saved successfully", "model_path": model_path}
     except Exception as e:
-        log_error(str(e))
+        log_error(logger, str(e))
         raise HTTPException(status_code=500, detail=str(e))
 
 def load_data_from_s3():

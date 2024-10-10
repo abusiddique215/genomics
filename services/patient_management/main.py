@@ -4,6 +4,8 @@ from pydantic import BaseModel
 import boto3
 from botocore.exceptions import ClientError
 from services.utils.logging import setup_logging
+import requests
+import os
 
 app = FastAPI()
 logger = setup_logging()
@@ -17,8 +19,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-dynamodb = boto3.resource('dynamodb')
-table = dynamodb.Table('Patients')
+# Initialize AWS DynamoDB client
+try:
+    dynamodb = boto3.resource('dynamodb')
+    table = dynamodb.Table('Patients')
+except Exception as e:
+    logger.error(f"Failed to initialize DynamoDB: {str(e)}")
+    raise
+
+# RAG pipeline service URL
+RAG_SERVICE_URL = os.getenv("RAG_SERVICE_URL", "http://localhost:8006")
 
 class PatientData(BaseModel):
     id: str
@@ -32,6 +42,10 @@ async def create_patient(patient: PatientData):
     try:
         response = table.put_item(Item=patient.dict())
         logger.info(f"Patient created: {patient.id}")
+        
+        # Trigger RAG pipeline update
+        await update_rag_pipeline()
+        
         return {"message": "Patient created successfully"}
     except ClientError as e:
         logger.error(f"Error creating patient: {str(e)}")
@@ -65,17 +79,29 @@ async def update_patient(patient_id: str, patient: PatientData):
             ReturnValues="UPDATED_NEW"
         )
         logger.info(f"Patient updated: {patient_id}")
+        
+        # Trigger RAG pipeline update
+        await update_rag_pipeline()
+        
         return {"message": "Patient updated successfully"}
     except ClientError as e:
         logger.error(f"Error updating patient: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
+async def update_rag_pipeline():
+    try:
+        response = requests.post(f"{RAG_SERVICE_URL}/update_patient_data")
+        if response.status_code != 200:
+            logger.error(f"Failed to update RAG pipeline: {response.text}")
+        else:
+            logger.info("RAG pipeline updated successfully")
+    except Exception as e:
+        logger.error(f"Error updating RAG pipeline: {str(e)}")
+
 @app.get("/test-aws-connection")
 async def test_aws_connection():
     try:
         # Test DynamoDB connection
-        dynamodb = boto3.resource('dynamodb')
-        table = dynamodb.Table('Patients')
         table.scan(Limit=1)
 
         # Test S3 connection
@@ -86,3 +112,7 @@ async def test_aws_connection():
     except ClientError as e:
         logger.error(f"AWS connection error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"AWS connection error: {str(e)}")
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)

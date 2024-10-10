@@ -4,6 +4,7 @@ import boto3
 from botocore.exceptions import ClientError
 from dotenv import load_dotenv
 import logging
+import requests
 
 # Add the project root directory to the Python path
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -17,8 +18,8 @@ from dash import html, dcc
 import dash_bootstrap_components as dbc
 import plotly.express as px
 import pandas as pd
-from flask import Flask
-from dash.dependencies import Input, Output
+from flask import Flask, render_template
+from dash.dependencies import Input, Output, State
 
 # Initialize Flask app
 server = Flask(__name__)
@@ -51,51 +52,46 @@ app.layout = dbc.Container([
     html.H1("Genomics Treatment Dashboard"),
     dbc.Row([
         dbc.Col([
-            html.H3("Patient Age Distribution"),
-            dcc.Graph(id='age-distribution')
+            html.H2("Patient List"),
+            dcc.Dropdown(id="patient-dropdown"),
+            html.Div(id="patient-details")
         ], width=6),
         dbc.Col([
-            html.H3("Treatment Efficacy"),
-            dcc.Graph(id='treatment-efficacy')
+            html.H2("AI Insights"),
+            dbc.Input(id="ai-question-input", placeholder="Ask a question about the patients...", type="text"),
+            dbc.Button("Ask AI", id="ai-question-button", color="primary", className="mt-2"),
+            html.Div(id="ai-answer-output", className="mt-3")
         ], width=6)
     ])
 ])
 
 @app.callback(
-    Output('age-distribution', 'figure'),
-    Input('age-distribution', 'relayoutData')
+    Output("ai-answer-output", "children"),
+    Input("ai-question-button", "n_clicks"),
+    State("ai-question-input", "value")
 )
-def update_age_distribution(relayoutData):
-    try:
-        if table is None:
-            raise Exception("DynamoDB table not initialized")
-        
-        # Fetch patient data from DynamoDB
-        response = table.scan()
-        patients = response['Items']
-        
-        df = pd.DataFrame(patients)
-        fig = px.histogram(df, x='age', title='Patient Age Distribution')
-        return fig
-    except Exception as e:
-        logger.error(f"Error fetching patient data: {str(e)}")
-        return px.histogram(title='Error: Unable to fetch patient data')
+def update_ai_answer(n_clicks, question):
+    if n_clicks and question:
+        answer = query_rag_pipeline(question)
+        return html.P(answer)
+    return ""
 
-@app.callback(
-    Output('treatment-efficacy', 'figure'),
-    Input('treatment-efficacy', 'relayoutData')
-)
-def update_treatment_efficacy(relayoutData):
+def query_rag_pipeline(question):
     try:
-        # This is a placeholder. In a real scenario, you'd fetch and process treatment data.
-        treatments = ['Treatment A', 'Treatment B', 'Treatment C']
-        efficacy = [0.75, 0.62, 0.88]
-        
-        fig = px.bar(x=treatments, y=efficacy, title='Treatment Efficacy')
-        return fig
+        response = requests.post(f"{os.getenv('RAG_SERVICE_URL')}/query", json={"question": question})
+        if response.status_code == 200:
+            return response.json()["answer"]
+        else:
+            logger.error(f"Failed to query RAG pipeline: {response.text}")
+            return "Failed to get an answer from the AI."
     except Exception as e:
-        logger.error(f"Error generating treatment efficacy graph: {str(e)}")
-        return px.bar(title='Error: Unable to generate treatment efficacy graph')
+        logger.error(f"Error querying RAG pipeline: {str(e)}")
+        return "An error occurred while querying the AI."
+
+# Add a route for the root URL
+@server.route('/')
+def index():
+    return render_template('index.html')
 
 if __name__ == "__main__":
-    app.run_server(debug=True, host="0.0.0.0", port=8000)
+    app.run_server(debug=True, host='0.0.0.0', port=8050)

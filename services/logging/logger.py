@@ -2,32 +2,41 @@ import logging
 import watchtower
 import boto3
 from botocore.exceptions import ClientError
+import os
 
-# Set up CloudWatch logger
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+def setup_logging():
+    logger = logging.getLogger(__name__)
+    logger.setLevel(logging.INFO)
 
-try:
-    # Attempt to set up CloudWatch handler
-    cloudwatch_handler = watchtower.CloudWatchLogHandler(
-        log_group='GenomicsTreatmentAPI',
-        stream_name='ApplicationLogs',
-        boto3_session=boto3.Session()
-    )
-    logger.addHandler(cloudwatch_handler)
-except ClientError as e:
-    # Fall back to console logging if CloudWatch setup fails
+    # Always add a console handler
     console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)
     logger.addHandler(console_handler)
-    logger.error(f"Failed to set up CloudWatch logging: {str(e)}")
 
-def log_event(event_type, event_data):
+    try:
+        # Attempt to set up CloudWatch handler
+        cloudwatch_handler = watchtower.CloudWatchLogHandler(
+            log_group='GenomicsTreatmentAPI',
+            stream_name='ApplicationLogs',
+            use_queues=False,
+            create_log_group=True,
+            boto3_client=boto3.client('logs', region_name=os.getenv('AWS_DEFAULT_REGION'))
+        )
+        logger.addHandler(cloudwatch_handler)
+        logger.info("CloudWatch logging setup successful")
+    except Exception as e:
+        logger.error(f"Failed to set up CloudWatch logging: {str(e)}")
+        logger.warning("Continuing with console logging only")
+
+    return logger
+
+def log_event(logger, event_type, event_data):
     logger.info({
         'event_type': event_type,
         'data': event_data
     })
 
-def log_error(error_message):
+def log_error(logger, error_message):
     logger.error({
         'event_type': 'error',
         'message': error_message
