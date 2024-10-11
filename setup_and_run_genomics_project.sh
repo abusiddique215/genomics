@@ -68,24 +68,6 @@ if [ -z "$AWS_ACCESS_KEY_ID" ] || [ -z "$AWS_SECRET_ACCESS_KEY" ]; then
     aws configure
 fi
 
-# Create genomics-api-user if it doesn't exist
-if ! aws iam get-user --user-name genomics-api-user &> /dev/null; then
-    echo "Creating genomics-api-user..."
-    aws iam create-user --user-name genomics-api-user
-    aws iam create-access-key --user-name genomics-api-user > access_key.json
-    export AWS_ACCESS_KEY_ID=$(jq -r .AccessKey.AccessKeyId access_key.json)
-    export AWS_SECRET_ACCESS_KEY=$(jq -r .AccessKey.SecretAccessKey access_key.json)
-    echo "AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID" >> .env
-    echo "AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY" >> .env
-    rm access_key.json
-fi
-
-# Update IAM permissions
-echo "Updating IAM permissions..."
-echo "Note: This step requires an AWS account with IAM administrative privileges."
-echo "If you encounter permission errors, please run the update_iam_permissions.sh script separately with appropriate credentials."
-./update_iam_permissions.sh
-
 # Start the services
 echo "Starting genomics treatment services..."
 python start_services.py

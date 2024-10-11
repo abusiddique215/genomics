@@ -11,8 +11,8 @@ set -a
 source .env
 set +a
 
-# Update IAM permissions
-echo "Updating IAM permissions..."
+# Check AWS permissions
+echo "Checking AWS permissions..."
 ./update_iam_permissions.sh
 
 # Start the services
