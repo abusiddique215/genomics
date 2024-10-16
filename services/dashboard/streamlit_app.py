@@ -9,11 +9,11 @@ st.set_page_config(page_title="Genomics Dashboard", layout="wide")
 st.title("AI-Enhanced Personalized Treatment Recommendation System")
 
 # Fetch data from the backend services
-@st.cache_data  # This should work with the latest Streamlit version
+@st.cache_data
 def fetch_data():
     try:
         # Update these endpoints to match your actual service URLs
-        patient_data = requests.get("http://localhost:8002/patients").json()
+        patient_data = requests.get("http://localhost:8000/patient").json()
         treatment_data = requests.get("http://localhost:8004/treatments").json()
         return pd.DataFrame(patient_data), pd.DataFrame(treatment_data)
     except requests.RequestException as e:
@@ -25,8 +25,8 @@ patients_df, treatments_df = fetch_data()
 if not patients_df.empty and not treatments_df.empty:
     # Display patient information
     st.header("Patient Information")
-    selected_patient = st.selectbox("Select a patient", patients_df['patient_id'].tolist())
-    patient_info = patients_df[patients_df['patient_id'] == selected_patient].iloc[0]
+    selected_patient = st.selectbox("Select a patient", patients_df['id'].tolist())
+    patient_info = patients_df[patients_df['id'] == selected_patient].iloc[0]
     st.write(f"Name: {patient_info.get('name', 'N/A')}")
     st.write(f"Age: {patient_info.get('age', 'N/A')}")
     st.write(f"Gender: {patient_info.get('gender', 'N/A')}")
@@ -42,7 +42,7 @@ if not patients_df.empty and not treatments_df.empty:
 
     # Display genomic markers
     st.header("Genomic Markers")
-    genomic_markers = patient_info.get('genomic_markers', [])
+    genomic_markers = patient_info.get('genomic_data', {})
     if genomic_markers:
         st.write(genomic_markers)
     else:
