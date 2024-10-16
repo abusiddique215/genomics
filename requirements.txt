@@ -65,3 +65,4 @@ langchain==0.0.184
 faiss-cpu==1.7.3
 openai==0.27.0
 awscli==1.35.4
+streamlit==1.8.1

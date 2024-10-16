@@ -1,4 +1,5 @@
 import logging
+import json
 
 try:
     from elasticsearch import Elasticsearch
@@ -27,3 +28,9 @@ def setup_logging():
     handler = ElasticsearchHandler()
     logger.addHandler(handler)
     return logger
+
+def log_event(logger, event_type, event_data):
+    logger.info(f"Event: {event_type} - Data: {json.dumps(event_data)}")
+
+def log_error(logger, error_message):
+    logger.error(f"Error: {error_message}")

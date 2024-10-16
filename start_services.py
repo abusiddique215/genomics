@@ -20,8 +20,18 @@ def start_service(name, command):
     try:
         env = os.environ.copy()
         env["PYTHONPATH"] = f"{project_root}:{env.get('PYTHONPATH', '')}"
-        process = subprocess.Popen(command, shell=True, env=env)
-        print(f"{name} service started with PID {process.pid}")
+        process = subprocess.Popen(command, shell=True, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        stdout, stderr = process.communicate(timeout=30)  # Increased timeout to 30 seconds
+        print(f"{name} service output:")
+        print(stdout.decode())
+        print(stderr.decode())
+        if process.returncode != 0:
+            print(f"Error starting {name} service. Return code: {process.returncode}")
+        else:
+            print(f"{name} service started with PID {process.pid}")
+        return process
+    except subprocess.TimeoutExpired:
+        print(f"{name} service started but didn't finish in 30 seconds. This might be normal.")
         return process
     except Exception as e:
         print(f"Error starting {name} service: {str(e)}")
@@ -35,7 +45,7 @@ def main():
             processes.append((name, process))
         time.sleep(2)  # Wait a bit between starting services
 
-    print("All services started. Press Ctrl+C to stop all services.")
+    print("\nAll services started. Press Ctrl+C to stop all services.")
     try:
         while True:
             time.sleep(1)

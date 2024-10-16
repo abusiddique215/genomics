@@ -4,7 +4,7 @@ import tensorflow as tf
 import boto3
 import pandas as pd
 from datetime import datetime
-from services.logging.logger import setup_logging, log_event, log_error
+from services.utils.logging import setup_logging, log_event, log_error
 
 app = FastAPI()
 logger = setup_logging()
