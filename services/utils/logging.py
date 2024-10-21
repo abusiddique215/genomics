@@ -1,36 +1,20 @@
 import logging
-import json
-
-try:
-    from elasticsearch import Elasticsearch
-except ImportError:
-    print("Warning: Elasticsearch not installed. Some logging features may not work.")
-    Elasticsearch = None
-
-class ElasticsearchHandler(logging.Handler):
-    def __init__(self, host='localhost', port=9200):
-        super().__init__()
-        if Elasticsearch is not None:
-            self.es = Elasticsearch([{'host': host, 'port': port}])
-        else:
-            self.es = None
-
-    def emit(self, record):
-        if self.es is not None:
-            message = self.format(record)
-            self.es.index(index="app-logs", body={'message': message, 'level': record.levelname})
-        else:
-            print(f"Warning: Elasticsearch not available. Log message: {self.format(record)}")
 
 def setup_logging():
     logger = logging.getLogger()
     logger.setLevel(logging.INFO)
-    handler = ElasticsearchHandler()
-    logger.addHandler(handler)
+    
+    # Create a console handler
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)
+    
+    # Create a formatter
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    console_handler.setFormatter(formatter)
+    
+    # Add the console handler to the logger
+    logger.addHandler(console_handler)
+    
     return logger
 
-def log_event(logger, event_type, event_data):
-    logger.info(f"Event: {event_type} - Data: {json.dumps(event_data)}")
-
-def log_error(logger, error_message):
-    logger.error(f"Error: {error_message}")
+# You can add more logging functions here if needed

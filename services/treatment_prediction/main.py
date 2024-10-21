@@ -1,15 +1,14 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-import tensorflow as tf
-import boto3
-import numpy as np
-from services.utils.logging import setup_logging
+import logging
+import random
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = FastAPI()
-logger = setup_logging()
 
-# Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -18,28 +17,32 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-s3 = boto3.client('s3')
-
 class PatientData(BaseModel):
-    features: list[float]
+    id: str
+    genomic_data: dict
+    medical_history: dict
 
-@app.post("/predict/{model_name}")
-async def predict_treatment(model_name: str, patient: PatientData):
-    try:
-        # Download model from S3
-        bucket_name = 'your-s3-bucket-name'
-        model_path = f'/tmp/{model_name}.h5'
-        s3.download_file(bucket_name, f'models/{model_name}.h5', model_path)
-        
-        # Load the model
-        model = tf.keras.models.load_model(model_path)
-        
-        # Make prediction
-        input_data = np.array(patient.features).reshape(1, -1)
-        prediction = model.predict(input_data)
-        
-        logger.info(f"Prediction made for model: {model_name}")
-        return {"treatment_efficacy": float(prediction[0][0])}
-    except Exception as e:
-        logger.error(f"Error making prediction: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+class TreatmentRecommendation(BaseModel):
+    treatment: str
+    efficacy: float
+
+@app.post("/predict", response_model=TreatmentRecommendation)
+async def predict_treatment(patient: PatientData):
+    logger.info(f"Received prediction request for patient {patient.id}")
+    
+    # TODO: Implement actual prediction logic
+    # For now, we'll return a mock recommendation
+    treatments = ["Treatment A", "Treatment B", "Treatment C"]
+    recommended_treatment = random.choice(treatments)
+    efficacy = random.uniform(0.5, 1.0)
+    
+    logger.info(f"Recommending {recommended_treatment} with efficacy {efficacy:.2f}")
+    return TreatmentRecommendation(treatment=recommended_treatment, efficacy=efficacy)
+
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy"}
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8081)
