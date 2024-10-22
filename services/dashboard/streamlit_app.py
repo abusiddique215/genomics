@@ -11,7 +11,7 @@ st.title("AI-Enhanced Personalized Treatment Recommendation System")
 PATIENT_MANAGEMENT_URL = "http://localhost:8082"
 
 # Fetch data from the backend services
-@st.cache_data
+@st.cache_data(ttl=5)  # Cache for 5 seconds
 def fetch_data():
     try:
         # Fetch all patients
@@ -69,38 +69,39 @@ if not patients_df.empty:
                          title='Treatment Efficacy')
             st.plotly_chart(fig)
         else:
-            st.write("Unable to fetch treatment recommendations.")
+            st.error(f"Unable to fetch treatment recommendations: {recommendation_response.text}")
     else:
         st.error(f"Error fetching patient data: {response.text}")
 else:
-    st.warning("No patients found in the system. Please add patients using the patient management service.")
+    st.warning("No patients found in the system. Please add patients using the form below.")
 
-    # Add a form to create a new patient
-    st.header("Add a New Patient")
-    with st.form("new_patient_form"):
-        patient_id = st.text_input("Patient ID")
-        patient_name = st.text_input("Patient Name")
-        patient_age = st.number_input("Patient Age", min_value=0, max_value=150)
-        genomic_data = st.text_area("Genomic Data (JSON format)")
-        medical_history = st.text_area("Medical History (JSON format)")
+# Add a form to create a new patient
+st.header("Add a New Patient")
+with st.form("new_patient_form"):
+    patient_id = st.text_input("Patient ID")
+    patient_name = st.text_input("Patient Name")
+    patient_age = st.number_input("Patient Age", min_value=0, max_value=150)
+    genomic_data = st.text_area("Genomic Data (JSON format)")
+    medical_history = st.text_area("Medical History (JSON format)")
 
-        submit_button = st.form_submit_button("Add Patient")
+    submit_button = st.form_submit_button("Add Patient")
 
-        if submit_button:
-            try:
-                new_patient = {
-                    "id": patient_id,
-                    "name": patient_name,
-                    "age": patient_age,
-                    "genomic_data": eval(genomic_data),
-                    "medical_history": eval(medical_history)
-                }
-                response = requests.post(f"{PATIENT_MANAGEMENT_URL}/patient", json=new_patient)
-                if response.status_code == 200:
-                    st.success("Patient added successfully!")
-                else:
-                    st.error(f"Error adding patient: {response.text}")
-            except Exception as e:
-                st.error(f"Error adding patient: {str(e)}")
+    if submit_button:
+        try:
+            new_patient = {
+                "id": patient_id,
+                "name": patient_name,
+                "age": patient_age,
+                "genomic_data": eval(genomic_data),
+                "medical_history": eval(medical_history)
+            }
+            response = requests.post(f"{PATIENT_MANAGEMENT_URL}/patient", json=new_patient)
+            if response.status_code == 200:
+                st.success("Patient added successfully!")
+                st.experimental_rerun()  # Rerun the app to refresh the patient list
+            else:
+                st.error(f"Error adding patient: {response.text}")
+        except Exception as e:
+            st.error(f"Error adding patient: {str(e)}")
 
 # Add more visualizations and interactive elements as needed
