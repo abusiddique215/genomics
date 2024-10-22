@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from botocore.exceptions import ClientError
 import logging
+import requests
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -28,8 +29,14 @@ class PatientData(BaseModel):
     genomic_data: dict
     medical_history: dict
 
+class TreatmentRecommendation(BaseModel):
+    treatment: str
+    efficacy: float
+
 # Placeholder for patient data storage
 patients = {}
+
+TREATMENT_PREDICTION_URL = "http://localhost:8083"  # Updated to use new port
 
 @app.on_event("startup")
 async def startup_event():
@@ -75,14 +82,30 @@ async def update_patient(patient_id: str, patient: PatientData):
     logger.info(f"Patient updated: {patient_id}")
     return {"message": "Patient updated successfully"}
 
-@app.get("/test-aws-connection")
-async def test_aws_connection():
-    logger.debug("Handling GET request to /test-aws-connection")
+@app.get("/patient/{patient_id}/treatment_recommendation")
+async def get_treatment_recommendation(patient_id: str):
+    logger.debug(f"Handling GET request to /patient/{patient_id}/treatment_recommendation")
+    if patient_id not in patients:
+        logger.warning(f"Patient not found: {patient_id}")
+        raise HTTPException(status_code=404, detail="Patient not found")
+    
+    patient = patients[patient_id]
     try:
-        # Placeholder for AWS connection test
-        return {"message": "AWS connection successful"}
-    except ClientError as e:
-        logger.error(f"AWS connection error: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"AWS connection error: {str(e)}")
+        response = requests.post(f"{TREATMENT_PREDICTION_URL}/predict", json={
+            "id": patient["id"],
+            "genomic_data": patient["genomic_data"],
+            "medical_history": patient["medical_history"]
+        })
+        response.raise_for_status()
+        recommendation = response.json()
+        logger.info(f"Treatment recommendation received for patient {patient_id}")
+        return recommendation
+    except requests.RequestException as e:
+        logger.error(f"Error getting treatment recommendation: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error getting treatment recommendation")
 
 logger.debug("FastAPI application setup completed")
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8082)
