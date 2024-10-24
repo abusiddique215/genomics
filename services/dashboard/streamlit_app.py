@@ -2,13 +2,36 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import requests
-import os
+import json
+from typing import Tuple, Optional
 
 st.set_page_config(page_title="Genomics Dashboard", layout="wide")
 
 st.title("AI-Enhanced Personalized Treatment Recommendation System")
 
 PATIENT_MANAGEMENT_URL = "http://localhost:8082"
+
+def handle_api_error(response: requests.Response) -> str:
+    """Handle API error responses and return user-friendly error messages"""
+    try:
+        error_data = response.json()
+        if isinstance(error_data, dict) and 'detail' in error_data:
+            if isinstance(error_data['detail'], dict):
+                return f"Error: {error_data['detail'].get('message', 'Unknown error')}"
+            return f"Error: {error_data['detail']}"
+        return f"Error: {response.text}"
+    except:
+        return f"Error: {response.text}"
+
+def validate_json_input(json_str: str) -> Tuple[bool, Optional[dict], Optional[str]]:
+    """Validate JSON input and return (is_valid, parsed_data, error_message)"""
+    try:
+        data = json.loads(json_str)
+        if not isinstance(data, dict):
+            return False, None, "Input must be a JSON object"
+        return True, data, None
+    except json.JSONDecodeError as e:
+        return False, None, f"Invalid JSON format: {str(e)}"
 
 # Fetch data from the backend services
 @st.cache_data(ttl=5)  # Cache for 5 seconds
@@ -19,10 +42,10 @@ def fetch_data():
         if response.status_code == 200:
             return pd.DataFrame(response.json())
         else:
-            st.error(f"Error fetching patient data: {response.text}")
+            st.error(handle_api_error(response))
             return pd.DataFrame()
     except requests.RequestException as e:
-        st.error(f"Error fetching data: {e}")
+        st.error(f"Error connecting to server: {str(e)}")
         return pd.DataFrame()
 
 patients_df = fetch_data()
@@ -45,7 +68,7 @@ if not patients_df.empty:
         if genomic_markers:
             st.write(genomic_markers)
         else:
-            st.write("No genomic markers available for this patient.")
+            st.info("No genomic markers available for this patient.")
         
         # Display medical history
         st.header("Medical History")
@@ -53,7 +76,7 @@ if not patients_df.empty:
         if medical_history:
             st.write(medical_history)
         else:
-            st.write("No medical history available for this patient.")
+            st.info("No medical history available for this patient.")
         
         # Display treatment recommendations
         st.header("Treatment Recommendations")
@@ -69,9 +92,9 @@ if not patients_df.empty:
                          title='Treatment Efficacy')
             st.plotly_chart(fig)
         else:
-            st.error(f"Unable to fetch treatment recommendations: {recommendation_response.text}")
+            st.error(handle_api_error(recommendation_response))
     else:
-        st.error(f"Error fetching patient data: {response.text}")
+        st.error(handle_api_error(response))
 else:
     st.warning("No patients found in the system. Please add patients using the form below.")
 
@@ -87,21 +110,34 @@ with st.form("new_patient_form"):
     submit_button = st.form_submit_button("Add Patient")
 
     if submit_button:
-        try:
-            new_patient = {
-                "id": patient_id,
-                "name": patient_name,
-                "age": patient_age,
-                "genomic_data": eval(genomic_data),
-                "medical_history": eval(medical_history)
-            }
-            response = requests.post(f"{PATIENT_MANAGEMENT_URL}/patient", json=new_patient)
-            if response.status_code == 200:
-                st.success("Patient added successfully!")
-                st.experimental_rerun()  # Rerun the app to refresh the patient list
+        # Validate inputs
+        if not patient_id or not patient_name or patient_age == 0:
+            st.error("Please fill in all required fields (ID, Name, and Age)")
+        else:
+            # Validate JSON inputs
+            is_valid_genomic, genomic_dict, genomic_error = validate_json_input(genomic_data)
+            is_valid_medical, medical_dict, medical_error = validate_json_input(medical_history)
+
+            if not is_valid_genomic:
+                st.error(f"Invalid Genomic Data: {genomic_error}")
+            elif not is_valid_medical:
+                st.error(f"Invalid Medical History: {medical_error}")
             else:
-                st.error(f"Error adding patient: {response.text}")
-        except Exception as e:
-            st.error(f"Error adding patient: {str(e)}")
+                try:
+                    new_patient = {
+                        "id": patient_id,
+                        "name": patient_name,
+                        "age": patient_age,
+                        "genomic_data": genomic_dict,
+                        "medical_history": medical_dict
+                    }
+                    response = requests.post(f"{PATIENT_MANAGEMENT_URL}/patient", json=new_patient)
+                    if response.status_code == 200:
+                        st.success("Patient added successfully!")
+                        st.experimental_rerun()  # Rerun the app to refresh the patient list
+                    else:
+                        st.error(handle_api_error(response))
+                except Exception as e:
+                    st.error(f"Error adding patient: {str(e)}")
 
 # Add more visualizations and interactive elements as needed
