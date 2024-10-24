@@ -33,6 +33,12 @@ def validate_json_input(json_str: str) -> Tuple[bool, Optional[dict], Optional[s
     except json.JSONDecodeError as e:
         return False, None, f"Invalid JSON format: {str(e)}"
 
+def validate_age(age: int) -> Tuple[bool, Optional[str]]:
+    """Validate age and return (is_valid, error_message)"""
+    if age < 0 or age > 150:
+        return False, "Age must be between 0 and 150"
+    return True, None
+
 # Fetch data from the backend services
 @st.cache_data(ttl=5)  # Cache for 5 seconds
 def fetch_data():
@@ -114,6 +120,12 @@ with st.form("new_patient_form"):
         if not patient_id or not patient_name or patient_age == 0:
             st.error("Please fill in all required fields (ID, Name, and Age)")
         else:
+            # Validate age
+            is_valid_age, age_error = validate_age(patient_age)
+            if not is_valid_age:
+                st.error(age_error)
+                st.stop()
+
             # Validate JSON inputs
             is_valid_genomic, genomic_dict, genomic_error = validate_json_input(genomic_data)
             is_valid_medical, medical_dict, medical_error = validate_json_input(medical_history)
@@ -134,7 +146,7 @@ with st.form("new_patient_form"):
                     response = requests.post(f"{PATIENT_MANAGEMENT_URL}/patient", json=new_patient)
                     if response.status_code == 200:
                         st.success("Patient added successfully!")
-                        st.experimental_rerun()  # Rerun the app to refresh the patient list
+                        st.rerun()  # Use st.rerun() instead of st.experimental_rerun()
                     else:
                         st.error(handle_api_error(response))
                 except Exception as e:
