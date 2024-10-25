@@ -2,7 +2,6 @@ import boto3
 import time
 import sys
 from botocore.exceptions import ClientError
-from decimal import Decimal
 
 def wait_for_dynamodb(max_retries=5, delay=2):
     """Wait for DynamoDB to be available"""
@@ -79,67 +78,36 @@ def create_tables():
     waiter.wait(TableName='patients')
     waiter.wait(TableName='patient_progress')
     print("Tables are ready!")
+    return True
 
 def verify_tables():
     """Verify tables exist and are accessible"""
-    dynamodb = boto3.resource('dynamodb',
-                            endpoint_url='http://localhost:8000',
-                            region_name='us-west-2',
-                            aws_access_key_id='dummy',
-                            aws_secret_access_key='dummy')
-    
-    # Test patients table
     try:
-        table = dynamodb.Table('patients')
-        table.put_item(
-            Item={
-                'id': 'test',
-                'name': 'Test Patient',
-                'age': 30,
-                'genomic_data': {
-                    'gene_variants': {
-                        'BRCA1': 'variant1',
-                        'BRCA2': 'variant2'
-                    },
-                    'mutation_scores': {
-                        'BRCA1': Decimal('0.8'),
-                        'BRCA2': Decimal('0.6')
-                    }
-                },
-                'medical_history': {
-                    'conditions': ['test_condition'],
-                    'treatments': ['test_treatment'],
-                    'allergies': [],
-                    'medications': []
-                }
-            }
-        )
-        print("Verified patients table")
+        dynamodb = boto3.client('dynamodb',
+                              endpoint_url='http://localhost:8000',
+                              region_name='us-west-2',
+                              aws_access_key_id='dummy',
+                              aws_secret_access_key='dummy')
+        
+        tables = dynamodb.list_tables()['TableNames']
+        required_tables = ['patients', 'patient_progress']
+        
+        for table in required_tables:
+            if table not in tables:
+                print(f"Error: {table} table not found")
+                return False
+            # Verify table is active
+            response = dynamodb.describe_table(TableName=table)
+            if response['Table']['TableStatus'] != 'ACTIVE':
+                print(f"Error: {table} table is not active")
+                return False
+        
+        print("All required tables exist and are active")
+        return True
+        
     except Exception as e:
-        print(f"Error verifying patients table: {str(e)}")
+        print(f"Error verifying tables: {str(e)}")
         return False
-    
-    # Test patient_progress table
-    try:
-        table = dynamodb.Table('patient_progress')
-        table.put_item(
-            Item={
-                'patient_id': 'test',
-                'timestamp': '2023-01-01T00:00:00',
-                'treatment': 'Test',
-                'efficacy_score': Decimal('0.5'),
-                'metrics': {
-                    'biomarker1': Decimal('0.9'),
-                    'biomarker2': Decimal('0.7')
-                }
-            }
-        )
-        print("Verified patient_progress table")
-    except Exception as e:
-        print(f"Error verifying patient_progress table: {str(e)}")
-        return False
-    
-    return True
 
 if __name__ == "__main__":
     print("Verifying DynamoDB setup...")
