@@ -5,13 +5,21 @@ import logging
 from typing import Dict, Any
 import sys
 import os
+from pydantic import BaseModel, Field
 import json
 
 # Add parent directory to path for imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from ai_model.model import GenomicsTreatmentModel
 
-app = FastAPI()
+app = FastAPI(
+    title="Genomics Treatment Prediction API",
+    description="API for predicting treatment recommendations based on genomic data",
+    version="1.0.0",
+    docs_url="/api/docs",
+    redoc_url="/api/redoc"
+)
+
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
@@ -26,16 +34,54 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.post("/predict")
-async def predict_treatment(patient_data: Dict[str, Any]):
-    """Predict treatment based on patient genomic and medical data"""
+class PredictionRequest(BaseModel):
+    genomic_data: Dict[str, Any] = Field(
+        ...,
+        description="Patient's genomic data including variants and mutations"
+    )
+    medical_history: Dict[str, Any] = Field(
+        ...,
+        description="Patient's medical history including conditions and treatments"
+    )
+
+class PredictionResponse(BaseModel):
+    recommended_treatment: str = Field(
+        ...,
+        description="Recommended treatment based on analysis"
+    )
+    efficacy: float = Field(
+        ...,
+        ge=0,
+        le=1,
+        description="Predicted efficacy score (0-1)"
+    )
+    confidence_level: str = Field(
+        ...,
+        description="Confidence level of the prediction (high/medium/low)"
+    )
+
+@app.post("/predict", response_model=PredictionResponse, tags=["Prediction"])
+async def predict_treatment(patient_data: PredictionRequest):
+    """
+    Predict treatment based on patient genomic and medical data.
+    
+    The model analyzes the patient's genomic data and medical history to recommend
+    the most effective treatment option.
+    
+    - **genomic_data**: Dictionary containing genomic markers and variants
+    - **medical_history**: Dictionary containing medical conditions and previous treatments
+    
+    Returns a prediction including:
+    - Recommended treatment
+    - Predicted efficacy score (0-1)
+    - Confidence level of the prediction
+    """
     try:
-        # Extract data
-        genomic_data = patient_data.get('genomic_data', {})
-        medical_history = patient_data.get('medical_history', {})
-        
         # Preprocess data
-        processed_data = model.preprocess_data(genomic_data, medical_history)
+        processed_data = model.preprocess_data(
+            patient_data.genomic_data,
+            patient_data.medical_history
+        )
         
         # Get prediction
         treatment, efficacy = model.predict_treatment(processed_data)
@@ -52,28 +98,11 @@ async def predict_treatment(patient_data: Dict[str, Any]):
         logger.error(f"Error predicting treatment: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/train")
-async def train_model(training_data: Dict[str, Any]):
-    """Train model with new data"""
-    try:
-        X_train = np.array(training_data['features'])
-        y_train = np.array(training_data['labels'])
-        
-        history = model.train(X_train, y_train)
-        
-        return {
-            "message": "Model training completed",
-            "final_accuracy": float(history.history['accuracy'][-1]),
-            "final_loss": float(history.history['loss'][-1])
-        }
-        
-    except Exception as e:
-        logger.error(f"Error training model: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/health")
+@app.get("/health", tags=["System"])
 async def health_check():
-    """Health check endpoint"""
+    """
+    Health check endpoint to verify the service is running.
+    """
     return {"status": "healthy"}
 
 if __name__ == "__main__":
