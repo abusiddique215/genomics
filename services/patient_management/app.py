@@ -1,26 +1,16 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, validator
-from botocore.exceptions import ClientError
+from typing import Dict, List, Optional
 import logging
-import requests
-from services.utils.logging import setup_logging
-from services.utils.error_handling import (
-    validate_patient_data,
-    handle_error,
-    ValidationError,
-    DatabaseError
-)
+import boto3
+from datetime import datetime
+import json
+from .progress_tracker import ProgressTracker
 
-logging.basicConfig(level=logging.DEBUG)
-logger = logging.getLogger(__name__)
-
-logger.debug("Starting patient_management app.py")
-
-logger.debug("Creating FastAPI application")
 app = FastAPI()
+logger = logging.getLogger(__name__)
+progress_tracker = ProgressTracker()
 
-logger.debug("Adding CORS middleware")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -29,114 +19,102 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-class PatientData(BaseModel):
-    id: str
-    name: str
-    age: int
-    genomic_data: dict
-    medical_history: dict
-
-    @validator('age')
-    def validate_age(cls, v):
-        if v < 0 or v > 150:
-            raise ValueError('Age must be between 0 and 150')
-        return v
-
-    @validator('name')
-    def validate_name(cls, v):
-        if len(v) < 2:
-            raise ValueError('Name must be at least 2 characters long')
-        return v
-
-# Placeholder for patient data storage
-patients = {}
-
-TREATMENT_PREDICTION_URL = "http://localhost:8083"
-
-@app.on_event("startup")
-async def startup_event():
-    logger.debug("FastAPI application is starting up")
-
-@app.get("/")
-async def root():
-    logger.debug("Handling GET request to /")
-    return {"message": "Patient Management Service is running"}
+dynamodb = boto3.resource('dynamodb')
+patient_table = dynamodb.Table('patients')
 
 @app.post("/patient")
-async def create_patient(patient: PatientData):
-    logger.debug(f"Handling POST request to /patient with data: {patient}")
+async def create_patient(patient: Dict):
+    """Create a new patient record"""
     try:
-        # Validate patient data
-        validate_patient_data(patient.dict())
-        
-        # Store patient data
-        patients[patient.id] = patient.dict()
-        logger.info(f"Patient created: {patient.id}")
+        patient_table.put_item(Item=patient)
+        logger.info(f"Created patient record: {patient['id']}")
         return {"message": "Patient created successfully"}
     except Exception as e:
-        return handle_error(e)
-
-@app.get("/patient")
-async def get_all_patients():
-    logger.debug("Handling GET request to /patient")
-    try:
-        return list(patients.values())
-    except Exception as e:
-        return handle_error(e)
+        logger.error(f"Error creating patient: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/patient/{patient_id}")
 async def get_patient(patient_id: str):
-    logger.debug(f"Handling GET request to /patient/{patient_id}")
+    """Get patient record by ID"""
     try:
-        if patient_id not in patients:
-            raise ValidationError("Patient not found", "patient_id")
+        response = patient_table.get_item(Key={'id': patient_id})
+        patient = response.get('Item')
+        if not patient:
+            raise HTTPException(status_code=404, detail="Patient not found")
         logger.info(f"Patient retrieved: {patient_id}")
-        return patients[patient_id]
+        return patient
     except Exception as e:
-        return handle_error(e)
+        logger.error(f"Error retrieving patient: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
-@app.put("/patient/{patient_id}")
-async def update_patient(patient_id: str, patient: PatientData):
-    logger.debug(f"Handling PUT request to /patient/{patient_id} with data: {patient}")
+@app.get("/patient")
+async def list_patients():
+    """List all patients"""
     try:
-        if patient_id not in patients:
-            raise ValidationError("Patient not found", "patient_id")
-        
-        # Validate patient data
-        validate_patient_data(patient.dict())
-        
-        # Update patient data
-        patients[patient_id] = patient.dict()
-        logger.info(f"Patient updated: {patient_id}")
-        return {"message": "Patient updated successfully"}
+        response = patient_table.scan()
+        return response.get('Items', [])
     except Exception as e:
-        return handle_error(e)
+        logger.error(f"Error listing patients: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/patient/{patient_id}/progress")
+async def add_progress(patient_id: str, progress_data: Dict):
+    """Add a progress entry for a patient"""
+    try:
+        result = progress_tracker.add_progress_entry(patient_id, progress_data)
+        return result
+    except Exception as e:
+        logger.error(f"Error adding progress: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/patient/{patient_id}/progress")
+async def get_progress(patient_id: str, start_date: Optional[str] = None):
+    """Get progress history for a patient"""
+    try:
+        progress = progress_tracker.get_patient_progress(patient_id, start_date)
+        return progress
+    except Exception as e:
+        logger.error(f"Error retrieving progress: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/patient/{patient_id}/progress/analysis")
+async def analyze_patient_progress(patient_id: str):
+    """Get analysis of patient's treatment progress"""
+    try:
+        analysis = progress_tracker.analyze_progress(patient_id)
+        return analysis
+    except Exception as e:
+        logger.error(f"Error analyzing progress: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/patient/{patient_id}/treatment_recommendation")
 async def get_treatment_recommendation(patient_id: str):
-    logger.debug(f"Handling GET request to /patient/{patient_id}/treatment_recommendation")
+    """Get treatment recommendation for a patient"""
     try:
-        if patient_id not in patients:
-            raise ValidationError("Patient not found", "patient_id")
+        # Get patient data
+        patient = await get_patient(patient_id)
         
-        patient = patients[patient_id]
-        try:
-            response = requests.post(f"{TREATMENT_PREDICTION_URL}/predict", json={
-                "id": patient["id"],
-                "genomic_data": patient["genomic_data"],
-                "medical_history": patient["medical_history"]
-            })
-            response.raise_for_status()
-            recommendation = response.json()
-            logger.info(f"Treatment recommendation received for patient {patient_id}")
-            return recommendation
-        except requests.RequestException as e:
-            raise DatabaseError(f"Error getting treatment recommendation: {str(e)}")
+        # Get treatment prediction from prediction service
+        import requests
+        response = requests.post(
+            "http://localhost:8083/predict",
+            json={
+                "genomic_data": patient.get("genomic_data", {}),
+                "medical_history": patient.get("medical_history", {})
+            }
+        )
+        
+        if response.status_code != 200:
+            raise HTTPException(status_code=500, detail="Error getting treatment recommendation")
+            
+        recommendation = response.json()
+        logger.info(f"Treatment recommendation received for patient {patient_id}")
+        return recommendation
+        
     except Exception as e:
-        return handle_error(e)
-
-logger.debug("FastAPI application setup completed")
+        logger.error(f"Error getting treatment recommendation: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8082)
+    uvicorn.run(app, host="0.0.0.0", port=8501)

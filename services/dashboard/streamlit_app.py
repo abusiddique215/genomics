@@ -1,155 +1,191 @@
 import streamlit as st
-import pandas as pd
-import plotly.express as px
 import requests
 import json
-from typing import Tuple, Optional
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+from datetime import datetime
+import numpy as np
 
-st.set_page_config(page_title="Genomics Dashboard", layout="wide")
+# Configure page
+st.set_page_config(page_title="Genomics Treatment Dashboard", layout="wide")
 
-st.title("AI-Enhanced Personalized Treatment Recommendation System")
+# API endpoints
+PATIENT_API = "http://localhost:8501"
+TREATMENT_API = "http://localhost:8083"
+DATA_INGESTION_API = "http://localhost:8084"
 
-PATIENT_MANAGEMENT_URL = "http://localhost:8082"
-
-def handle_api_error(response: requests.Response) -> str:
-    """Handle API error responses and return user-friendly error messages"""
+def load_patient_data():
+    """Load all patient data"""
     try:
-        error_data = response.json()
-        if isinstance(error_data, dict) and 'detail' in error_data:
-            if isinstance(error_data['detail'], dict):
-                return f"Error: {error_data['detail'].get('message', 'Unknown error')}"
-            return f"Error: {error_data['detail']}"
-        return f"Error: {response.text}"
-    except:
-        return f"Error: {response.text}"
-
-def validate_json_input(json_str: str) -> Tuple[bool, Optional[dict], Optional[str]]:
-    """Validate JSON input and return (is_valid, parsed_data, error_message)"""
-    try:
-        data = json.loads(json_str)
-        if not isinstance(data, dict):
-            return False, None, "Input must be a JSON object"
-        return True, data, None
-    except json.JSONDecodeError as e:
-        return False, None, f"Invalid JSON format: {str(e)}"
-
-def validate_age(age: int) -> Tuple[bool, Optional[str]]:
-    """Validate age and return (is_valid, error_message)"""
-    if age < 0 or age > 150:
-        return False, "Age must be between 0 and 150"
-    return True, None
-
-# Fetch data from the backend services
-@st.cache_data(ttl=5)  # Cache for 5 seconds
-def fetch_data():
-    try:
-        # Fetch all patients
-        response = requests.get(f"{PATIENT_MANAGEMENT_URL}/patient")
+        response = requests.get(f"{PATIENT_API}/patient")
         if response.status_code == 200:
-            return pd.DataFrame(response.json())
-        else:
-            st.error(handle_api_error(response))
-            return pd.DataFrame()
-    except requests.RequestException as e:
-        st.error(f"Error connecting to server: {str(e)}")
-        return pd.DataFrame()
+            return response.json()
+        return []
+    except:
+        return []
 
-patients_df = fetch_data()
+def get_treatment_recommendation(patient_id):
+    """Get treatment recommendation for a patient"""
+    try:
+        response = requests.get(f"{PATIENT_API}/patient/{patient_id}/treatment_recommendation")
+        if response.status_code == 200:
+            return response.json()
+        return None
+    except:
+        return None
 
-if not patients_df.empty:
-    # Display patient information
-    st.header("Patient Information")
-    selected_patient = st.selectbox("Select a patient", patients_df['id'].tolist())
+# Sidebar
+st.sidebar.title("Navigation")
+page = st.sidebar.radio("Go to", ["Dashboard", "Patient Management", "Treatment Analysis"])
+
+if page == "Dashboard":
+    st.title("Genomics Treatment Dashboard")
     
-    # Fetch specific patient data
-    response = requests.get(f"{PATIENT_MANAGEMENT_URL}/patient/{selected_patient}")
-    if response.status_code == 200:
-        patient_info = response.json()
-        st.write(f"Name: {patient_info.get('name', 'N/A')}")
-        st.write(f"Age: {patient_info.get('age', 'N/A')}")
+    # Summary metrics
+    col1, col2, col3 = st.columns(3)
+    patients = load_patient_data()
+    
+    with col1:
+        st.metric("Total Patients", len(patients))
+    
+    with col2:
+        # Calculate average treatment efficacy
+        efficacies = []
+        for patient in patients:
+            rec = get_treatment_recommendation(patient['id'])
+            if rec and 'efficacy' in rec:
+                efficacies.append(rec['efficacy'])
+        avg_efficacy = np.mean(efficacies) if efficacies else 0
+        st.metric("Average Treatment Efficacy", f"{avg_efficacy:.2%}")
+    
+    with col3:
+        # Count high confidence predictions
+        high_conf = sum(1 for e in efficacies if e > 0.8)
+        st.metric("High Confidence Predictions", high_conf)
+    
+    # Treatment distribution chart
+    st.subheader("Treatment Distribution")
+    treatment_counts = {}
+    for patient in patients:
+        rec = get_treatment_recommendation(patient['id'])
+        if rec and 'recommended_treatment' in rec:
+            treatment = rec['recommended_treatment']
+            treatment_counts[treatment] = treatment_counts.get(treatment, 0) + 1
+    
+    if treatment_counts:
+        fig = px.pie(
+            values=list(treatment_counts.values()),
+            names=list(treatment_counts.keys()),
+            title="Treatment Distribution"
+        )
+        st.plotly_chart(fig)
+    
+    # Efficacy distribution
+    st.subheader("Treatment Efficacy Distribution")
+    if efficacies:
+        fig = px.histogram(
+            x=efficacies,
+            nbins=20,
+            title="Treatment Efficacy Distribution"
+        )
+        st.plotly_chart(fig)
+
+elif page == "Patient Management":
+    st.title("Patient Management")
+    
+    # Add new patient form
+    st.header("Add New Patient")
+    with st.form("new_patient_form"):
+        patient_id = st.text_input("Patient ID")
+        patient_name = st.text_input("Patient Name")
+        age = st.number_input("Patient Age", min_value=0, max_value=150)
+        genomic_data = st.text_area("Genomic Data (JSON format)")
+        medical_history = st.text_area("Medical History (JSON format)")
         
-        # Display genomic markers
-        st.header("Genomic Markers")
-        genomic_markers = patient_info.get('genomic_data', {})
-        if genomic_markers:
-            st.write(genomic_markers)
-        else:
-            st.info("No genomic markers available for this patient.")
+        submit_button = st.form_submit_button("Add Patient")
         
-        # Display medical history
-        st.header("Medical History")
-        medical_history = patient_info.get('medical_history', {})
-        if medical_history:
-            st.write(medical_history)
-        else:
-            st.info("No medical history available for this patient.")
-        
-        # Display treatment recommendations
-        st.header("Treatment Recommendations")
-        recommendation_response = requests.get(f"{PATIENT_MANAGEMENT_URL}/patient/{selected_patient}/treatment_recommendation")
-        if recommendation_response.status_code == 200:
-            recommendation = recommendation_response.json()
-            st.write(f"Recommended Treatment: {recommendation['treatment']}")
-            st.write(f"Efficacy: {recommendation['efficacy']:.2f}")
-            
-            # Visualize efficacy
-            fig = px.bar(x=['Efficacy'], y=[recommendation['efficacy']], range_y=[0, 1],
-                         labels={'x': 'Metric', 'y': 'Score'},
-                         title='Treatment Efficacy')
-            st.plotly_chart(fig)
-        else:
-            st.error(handle_api_error(recommendation_response))
+        if submit_button:
+            try:
+                genomic_json = json.loads(genomic_data)
+                medical_json = json.loads(medical_history)
+                
+                patient_data = {
+                    "id": patient_id,
+                    "name": patient_name,
+                    "age": age,
+                    "genomic_data": genomic_json,
+                    "medical_history": medical_json
+                }
+                
+                response = requests.post(f"{PATIENT_API}/patient", json=patient_data)
+                if response.status_code == 200:
+                    st.success("Patient added successfully!")
+                else:
+                    st.error("Failed to add patient")
+            except json.JSONDecodeError:
+                st.error("Invalid JSON format in genomic data or medical history")
+            except Exception as e:
+                st.error(f"Error: {str(e)}")
+    
+    # Patient list
+    st.header("Patient List")
+    patients = load_patient_data()
+    if patients:
+        patient_df = pd.DataFrame(patients)
+        st.dataframe(patient_df)
+
+elif page == "Treatment Analysis":
+    st.title("Treatment Analysis")
+    
+    # Patient selection
+    patients = load_patient_data()
+    if not patients:
+        st.warning("No patients found")
     else:
-        st.error(handle_api_error(response))
-else:
-    st.warning("No patients found in the system. Please add patients using the form below.")
+        selected_patient = st.selectbox(
+            "Select Patient",
+            options=[p['id'] for p in patients],
+            format_func=lambda x: f"Patient {x}"
+        )
+        
+        if selected_patient:
+            # Get treatment recommendation
+            rec = get_treatment_recommendation(selected_patient)
+            if rec:
+                # Display recommendation details
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.subheader("Treatment Recommendation")
+                    st.write(f"Recommended Treatment: {rec['recommended_treatment']}")
+                    st.write(f"Efficacy: {rec['efficacy']:.2%}")
+                    st.write(f"Confidence Level: {rec['confidence_level'].title()}")
+                
+                with col2:
+                    # Efficacy gauge
+                    fig = go.Figure(go.Indicator(
+                        mode = "gauge+number",
+                        value = rec['efficacy'] * 100,
+                        title = {'text': "Treatment Efficacy"},
+                        gauge = {
+                            'axis': {'range': [0, 100]},
+                            'bar': {'color': "darkblue"},
+                            'steps': [
+                                {'range': [0, 60], 'color': "red"},
+                                {'range': [60, 80], 'color': "yellow"},
+                                {'range': [80, 100], 'color': "green"}
+                            ]
+                        }
+                    ))
+                    st.plotly_chart(fig)
+                
+                # Patient details
+                st.subheader("Patient Details")
+                patient_data = next((p for p in patients if p['id'] == selected_patient), None)
+                if patient_data:
+                    st.json(patient_data)
 
-# Add a form to create a new patient
-st.header("Add a New Patient")
-with st.form("new_patient_form"):
-    patient_id = st.text_input("Patient ID")
-    patient_name = st.text_input("Patient Name")
-    patient_age = st.number_input("Patient Age", min_value=0, max_value=150)
-    genomic_data = st.text_area("Genomic Data (JSON format)")
-    medical_history = st.text_area("Medical History (JSON format)")
-
-    submit_button = st.form_submit_button("Add Patient")
-
-    if submit_button:
-        # Validate inputs
-        if not patient_id or not patient_name or patient_age == 0:
-            st.error("Please fill in all required fields (ID, Name, and Age)")
-        else:
-            # Validate age
-            is_valid_age, age_error = validate_age(patient_age)
-            if not is_valid_age:
-                st.error(age_error)
-                st.stop()
-
-            # Validate JSON inputs
-            is_valid_genomic, genomic_dict, genomic_error = validate_json_input(genomic_data)
-            is_valid_medical, medical_dict, medical_error = validate_json_input(medical_history)
-
-            if not is_valid_genomic:
-                st.error(f"Invalid Genomic Data: {genomic_error}")
-            elif not is_valid_medical:
-                st.error(f"Invalid Medical History: {medical_error}")
-            else:
-                try:
-                    new_patient = {
-                        "id": patient_id,
-                        "name": patient_name,
-                        "age": patient_age,
-                        "genomic_data": genomic_dict,
-                        "medical_history": medical_dict
-                    }
-                    response = requests.post(f"{PATIENT_MANAGEMENT_URL}/patient", json=new_patient)
-                    if response.status_code == 200:
-                        st.success("Patient added successfully!")
-                        st.rerun()  # Use st.rerun() instead of st.experimental_rerun()
-                    else:
-                        st.error(handle_api_error(response))
-                except Exception as e:
-                    st.error(f"Error adding patient: {str(e)}")
-
-# Add more visualizations and interactive elements as needed
+# Footer
+st.markdown("---")
+st.markdown("Genomics Treatment Recommendation System - Dashboard")

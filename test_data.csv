@@ -1,0 +1,4 @@
+patient_id,gene1,gene2,gene3,variant1,variant2,variant3
+P001,A,T,G,normal,mutated,normal
+P002,T,G,C,mutated,normal,mutated
+P003,G,C,A,normal,normal,mutated
