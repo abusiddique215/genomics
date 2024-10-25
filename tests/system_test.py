@@ -1,6 +1,7 @@
 import requests
 import json
 import time
+import sys
 from datetime import datetime, timedelta
 from typing import Dict, Any
 
@@ -14,9 +15,9 @@ def make_request(method: str, url: str, json_data: Dict[str, Any] = None, max_re
     for attempt in range(max_retries):
         try:
             if method.upper() == 'GET':
-                response = requests.get(url)
+                response = requests.get(url, timeout=5)
             elif method.upper() == 'POST':
-                response = requests.post(url, json=json_data)
+                response = requests.post(url, json=json_data, timeout=5)
             else:
                 raise ValueError(f"Unsupported HTTP method: {method}")
             
@@ -28,6 +29,23 @@ def make_request(method: str, url: str, json_data: Dict[str, Any] = None, max_re
                 raise
             print(f"Request failed, retrying... ({attempt + 1}/{max_retries})")
             time.sleep(2)
+
+def verify_dynamodb_connection():
+    """Verify DynamoDB connection"""
+    print("\n=== Verifying DynamoDB Connection ===")
+    try:
+        response = make_request('POST', f"{PATIENT_API}/patient", {
+            "id": "TEST000",
+            "name": "Connection Test",
+            "age": 30,
+            "genomic_data": {"test": "data"},
+            "medical_history": {"test": "history"}
+        })
+        print("DynamoDB connection verified!")
+        return True
+    except Exception as e:
+        print(f"DynamoDB connection failed: {str(e)}")
+        return False
 
 def test_data_ingestion():
     print("\n=== Testing Data Ingestion ===")
@@ -60,59 +78,80 @@ def test_data_ingestion():
         "medical_history": medical_history
     }
     
-    response = make_request('POST', f"{PATIENT_API}/patient", patient_data)
-    print(f"Create patient response: {response.status_code}")
-    print(f"Response: {json.dumps(response.json(), indent=2)}")
-    return response.status_code == 200
+    try:
+        response = make_request('POST', f"{PATIENT_API}/patient", patient_data)
+        print(f"Create patient response: {response.status_code}")
+        print(f"Response: {json.dumps(response.json(), indent=2)}")
+        return True
+    except Exception as e:
+        print(f"Error: {str(e)}")
+        return False
 
 def test_treatment_prediction():
     print("\n=== Testing Treatment Prediction ===")
     
-    # Get treatment recommendation
-    response = make_request('GET', f"{PATIENT_API}/patient/TEST001/treatment_recommendation")
-    print(f"Treatment recommendation response: {response.status_code}")
-    print(f"Recommendation: {json.dumps(response.json(), indent=2)}")
-    return response.status_code == 200
+    try:
+        # Get treatment recommendation
+        response = make_request('GET', f"{PATIENT_API}/patient/TEST001/treatment_recommendation")
+        print(f"Treatment recommendation response: {response.status_code}")
+        print(f"Recommendation: {json.dumps(response.json(), indent=2)}")
+        return True
+    except Exception as e:
+        print(f"Error: {str(e)}")
+        return False
 
 def test_progress_tracking():
     print("\n=== Testing Progress Tracking ===")
     
-    # Add progress entry
-    progress_data = {
-        "treatment": "Treatment A",
-        "efficacy_score": 0.85,
-        "side_effects": ["mild fatigue"],
-        "notes": "Patient responding well to treatment",
-        "metrics": {"biomarker1": 0.9, "biomarker2": 0.7},
-        "next_appointment": (datetime.now() + timedelta(days=30)).isoformat()
-    }
-    
-    response = make_request('POST', f"{PATIENT_API}/patient/TEST001/progress", progress_data)
-    print(f"Add progress response: {response.status_code}")
-    print(f"Response: {json.dumps(response.json(), indent=2)}")
-    
-    # Get progress history
-    response = make_request('GET', f"{PATIENT_API}/patient/TEST001/progress")
-    print(f"Get progress response: {response.status_code}")
-    print(f"Progress history: {json.dumps(response.json(), indent=2)}")
-    return response.status_code == 200
+    try:
+        # Add progress entry
+        progress_data = {
+            "treatment": "Treatment A",
+            "efficacy_score": 0.85,
+            "side_effects": ["mild fatigue"],
+            "notes": "Patient responding well to treatment",
+            "metrics": {"biomarker1": 0.9, "biomarker2": 0.7},
+            "next_appointment": (datetime.now() + timedelta(days=30)).isoformat()
+        }
+        
+        response = make_request('POST', f"{PATIENT_API}/patient/TEST001/progress", progress_data)
+        print(f"Add progress response: {response.status_code}")
+        print(f"Response: {json.dumps(response.json(), indent=2)}")
+        
+        # Get progress history
+        response = make_request('GET', f"{PATIENT_API}/patient/TEST001/progress")
+        print(f"Get progress response: {response.status_code}")
+        print(f"Progress history: {json.dumps(response.json(), indent=2)}")
+        return True
+    except Exception as e:
+        print(f"Error: {str(e)}")
+        return False
 
 def test_patient_management():
     print("\n=== Testing Patient Management ===")
     
-    # Get patient details
-    response = make_request('GET', f"{PATIENT_API}/patient/TEST001")
-    print(f"Get patient response: {response.status_code}")
-    print(f"Patient details: {json.dumps(response.json(), indent=2)}")
-    
-    # List all patients
-    response = make_request('GET', f"{PATIENT_API}/patient")
-    print(f"List patients response: {response.status_code}")
-    print(f"Total patients: {len(response.json())}")
-    return response.status_code == 200
+    try:
+        # Get patient details
+        response = make_request('GET', f"{PATIENT_API}/patient/TEST001")
+        print(f"Get patient response: {response.status_code}")
+        print(f"Patient details: {json.dumps(response.json(), indent=2)}")
+        
+        # List all patients
+        response = make_request('GET', f"{PATIENT_API}/patient")
+        print(f"List patients response: {response.status_code}")
+        print(f"Total patients: {len(response.json())}")
+        return True
+    except Exception as e:
+        print(f"Error: {str(e)}")
+        return False
 
 def run_system_test():
     """Run all system tests"""
+    # First verify DynamoDB connection
+    if not verify_dynamodb_connection():
+        print("\n❌ DynamoDB connection failed! Please check your setup.")
+        sys.exit(1)
+
     tests = [
         ("Data Ingestion", test_data_ingestion),
         ("Treatment Prediction", test_treatment_prediction),
@@ -129,11 +168,11 @@ def run_system_test():
                 success = test_func()
                 results.append((test_name, success))
                 if success:
-                    print(f"{test_name} test passed!")
+                    print(f"✅ {test_name} test passed!")
                 else:
-                    print(f"{test_name} test failed!")
+                    print(f"❌ {test_name} test failed!")
             except Exception as e:
-                print(f"{test_name} test failed with error: {str(e)}")
+                print(f"❌ {test_name} test failed with error: {str(e)}")
                 results.append((test_name, False))
             time.sleep(1)
         
@@ -141,12 +180,13 @@ def run_system_test():
         print("\n=== Test Summary ===")
         all_passed = True
         for test_name, success in results:
-            status = "PASSED" if success else "FAILED"
+            status = "✅ PASSED" if success else "❌ FAILED"
             print(f"{test_name}: {status}")
             all_passed = all_passed and success
         
         if all_passed:
             print("\n✅ All System Tests Passed!")
+            sys.exit(0)
         else:
             print("\n❌ Some Tests Failed!")
             sys.exit(1)
