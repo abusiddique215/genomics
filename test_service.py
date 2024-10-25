@@ -11,12 +11,12 @@ def test_service():
     
     try:
         # Test root endpoint
-        response = requests.get("http://localhost:8000/")
+        response = requests.get("http://localhost:8080/")
         print(f"\nRoot endpoint response ({response.status_code}):")
         print(response.json())
         
         # Test health endpoint
-        response = requests.get("http://localhost:8000/health")
+        response = requests.get("http://localhost:8080/health")
         print(f"\nHealth endpoint response ({response.status_code}):")
         print(response.json())
         
