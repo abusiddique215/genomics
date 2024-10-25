@@ -1,61 +1,105 @@
 import subprocess
 import time
-import os
 import sys
+import os
+import signal
+from typing import List, Dict
+import requests
 
-# Add the project root to the Python path
-project_root = os.path.abspath(os.path.dirname(__file__))
-sys.path.insert(0, project_root)
-
-services = [
-    ("dashboard", "python services/dashboard/main.py"),
-    ("patient_management", "python services/patient_management/main.py"),
-    ("rag_pipeline", "python services/rag_pipeline/main.py"),
-    ("model_training", "python services/model_training/main.py"),
-    ("powerbi_integration", "python services/powerbi_integration/main.py")
-]
-
-def start_service(name, command):
-    print(f"Starting {name} service...")
+def start_service(service: Dict):
+    """Start a single service"""
     try:
-        env = os.environ.copy()
-        env["PYTHONPATH"] = f"{project_root}:{env.get('PYTHONPATH', '')}"
-        process = subprocess.Popen(command, shell=True, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        stdout, stderr = process.communicate(timeout=30)  # Increased timeout to 30 seconds
-        print(f"{name} service output:")
-        print(stdout.decode())
-        print(stderr.decode())
-        if process.returncode != 0:
-            print(f"Error starting {name} service. Return code: {process.returncode}")
-        else:
-            print(f"{name} service started with PID {process.pid}")
+        print(f"\nStarting {service['name']} service...")
+        process = subprocess.Popen(
+            service['command'],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            universal_newlines=True
+        )
+        
+        # Wait for service to start
+        time.sleep(5)
         return process
-    except subprocess.TimeoutExpired:
-        print(f"{name} service started but didn't finish in 30 seconds. This might be normal.")
-        return process
+        
     except Exception as e:
-        print(f"Error starting {name} service: {str(e)}")
+        print(f"Error starting {service['name']}: {str(e)}")
         return None
 
-def main():
-    processes = []
-    for name, command in services:
-        process = start_service(name, command)
-        if process:
-            processes.append((name, process))
-        time.sleep(2)  # Wait a bit between starting services
-
-    print("\nAll services started. Press Ctrl+C to stop all services.")
+def check_service_health(port: int) -> bool:
+    """Check if a service is healthy by attempting to connect"""
     try:
-        while True:
-            time.sleep(1)
+        response = requests.get(f"http://localhost:{port}/health")
+        return response.status_code == 200
+    except:
+        return False
+
+def start_services():
+    """Start all required services"""
+    # Define services
+    services = [
+        {
+            'name': 'Patient Management',
+            'command': ['python', '-m', 'services.patient_management.app'],
+            'port': 8501
+        },
+        {
+            'name': 'Treatment Prediction',
+            'command': ['python', '-m', 'services.treatment_prediction.main'],
+            'port': 8083
+        },
+        {
+            'name': 'Data Ingestion',
+            'command': ['python', '-m', 'services.data_ingestion.main'],
+            'port': 8084
+        }
+    ]
+
+    processes = []
+    
+    try:
+        print("Starting services...")
+        
+        # Start each service
+        for service in services:
+            process = start_service(service)
+            if process:
+                processes.append(process)
+                print(f"{service['name']} service started on port {service['port']}")
+                
+                # Check service health
+                retries = 3
+                while retries > 0:
+                    if check_service_health(service['port']):
+                        print(f"{service['name']} service is healthy")
+                        break
+                    retries -= 1
+                    time.sleep(2)
+                
+                if retries == 0:
+                    print(f"Warning: Could not verify {service['name']} health")
+            else:
+                print(f"Failed to start {service['name']}")
+                # Cleanup already started processes
+                for p in processes:
+                    p.terminate()
+                sys.exit(1)
+        
+        print("\nAll services started!")
+        
+        # Run the system tests
+        print("\nRunning system tests...")
+        subprocess.run([sys.executable, '-m', 'tests.system_test'])
+        
     except KeyboardInterrupt:
-        print("Stopping all services...")
-        for name, process in processes:
-            print(f"Stopping {name} service...")
+        print("\nShutting down services...")
+        for process in processes:
             process.terminate()
-            process.wait()
-        print("All services stopped.")
+        sys.exit(0)
+    except Exception as e:
+        print(f"\nError: {str(e)}")
+        for process in processes:
+            process.terminate()
+        sys.exit(1)
 
 if __name__ == "__main__":
-    main()
+    start_services()
