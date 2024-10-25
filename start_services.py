@@ -51,7 +51,7 @@ def start_services():
         {
             'name': 'Patient Management',
             'command': ['python', '-m', 'services.patient_management.app'],
-            'port': 8000
+            'port': 8080
         },
         {
             'name': 'Treatment Prediction',
