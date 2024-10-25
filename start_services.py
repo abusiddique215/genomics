@@ -2,9 +2,14 @@ import subprocess
 import time
 import sys
 import os
-import signal
 from typing import List, Dict
 import requests
+import signal
+
+def verify_dynamodb():
+    """Run DynamoDB verification"""
+    result = subprocess.run([sys.executable, 'verify_dynamodb.py'])
+    return result.returncode == 0
 
 def start_service(service: Dict):
     """Start a single service"""
@@ -35,6 +40,12 @@ def check_service_health(port: int) -> bool:
 
 def start_services():
     """Start all required services"""
+    # First verify DynamoDB is running and tables are created
+    print("Verifying DynamoDB setup...")
+    if not verify_dynamodb():
+        print("Error: DynamoDB verification failed")
+        sys.exit(1)
+    
     # Define services
     services = [
         {

@@ -34,13 +34,30 @@ def verify_dynamodb_connection():
     """Verify DynamoDB connection"""
     print("\n=== Verifying DynamoDB Connection ===")
     try:
-        response = make_request('POST', f"{PATIENT_API}/patient", {
+        # Create a test patient with valid data structure
+        test_data = {
             "id": "TEST000",
             "name": "Connection Test",
             "age": 30,
-            "genomic_data": {"test": "data"},
-            "medical_history": {"test": "history"}
-        })
+            "genomic_data": {
+                "gene_variants": {
+                    "BRCA1": "variant1",
+                    "BRCA2": "variant2"
+                },
+                "mutation_scores": {
+                    "BRCA1": 0.8,
+                    "BRCA2": 0.6
+                }
+            },
+            "medical_history": {
+                "conditions": ["test_condition"],
+                "treatments": ["test_treatment"],
+                "allergies": [],
+                "medications": []
+            }
+        }
+        
+        response = make_request('POST', f"{PATIENT_API}/patient", test_data)
         print("DynamoDB connection verified!")
         return True
     except Exception as e:
