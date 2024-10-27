@@ -11,17 +11,28 @@ def verify_dynamodb():
     result = subprocess.run([sys.executable, 'verify_dynamodb.py'])
     return result.returncode == 0
 
-def kill_existing_processes():
-    """Kill any existing Python processes"""
-    try:
-        # Kill any existing Python processes
-        subprocess.run(['pkill', '-f', 'python'])
-        time.sleep(2)  # Wait for processes to be killed
-    except Exception as e:
-        print(f"Warning: Failed to kill existing processes: {str(e)}")
-
 def check_port(port: int) -> bool:
     """Check if a port is in use"""
+    try:
+        import socket
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            return s.connect_ex(('localhost', port)) == 0
+    except:
+        return False
+
+def wait_for_port(port: int, timeout: int = 20) -> bool:
+    """Wait for a port to become available"""
+    retries = timeout
+    while retries > 0:
+        if not check_port(port):
+            return True
+        print(f"Waiting for port {port} to become available... ({retries} retries left)")
+        time.sleep(1)
+        retries -= 1
+    return False
+
+def check_service_health(port: int) -> bool:
+    """Check if a service is healthy"""
     try:
         response = requests.get(f"http://localhost:{port}/health", timeout=1)
         return response.status_code == 200
@@ -33,9 +44,9 @@ def start_service(service: Dict) -> Optional[subprocess.Popen]:
     try:
         print(f"\nStarting {service['name']} service...")
         
-        # Check if service is already running
-        if check_port(service['port']):
-            print(f"{service['name']} is already running on port {service['port']}")
+        # Wait for port to become available
+        if not wait_for_port(service['port']):
+            print(f"Port {service['port']} is still in use")
             return None
         
         # Start the service
@@ -49,7 +60,7 @@ def start_service(service: Dict) -> Optional[subprocess.Popen]:
         # Wait for service to start
         retries = 10
         while retries > 0:
-            if check_port(service['port']):
+            if check_service_health(service['port']):
                 print(f"{service['name']} service is healthy")
                 return process
             print(f"Waiting for {service['name']} to start... ({retries} retries left)")
@@ -94,9 +105,6 @@ def start_services():
     
     try:
         print("Starting services...")
-        
-        # Kill any existing processes
-        kill_existing_processes()
         
         # Start each service
         for service in services:
