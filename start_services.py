@@ -14,9 +14,8 @@ def verify_dynamodb():
 def check_port(port: int) -> bool:
     """Check if a port is in use"""
     try:
-        import socket
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            return s.connect_ex(('localhost', port)) == 0
+        response = requests.get(f"http://localhost:{port}/health", timeout=2)
+        return response.status_code == 200
     except:
         return False
 
@@ -34,7 +33,7 @@ def wait_for_port(port: int, timeout: int = 20) -> bool:
 def check_service_health(port: int) -> bool:
     """Check if a service is healthy"""
     try:
-        response = requests.get(f"http://localhost:{port}/health", timeout=1)
+        response = requests.get(f"http://localhost:{port}/health", timeout=2)
         return response.status_code == 200
     except:
         return False
@@ -73,6 +72,48 @@ def start_service(service: Dict) -> Optional[subprocess.Popen]:
     except Exception as e:
         print(f"Error starting {service['name']}: {str(e)}")
         return None
+
+def run_tests() -> bool:
+    """Run system tests"""
+    print("\nRunning system tests...")
+    try:
+        # Wait for all services to be healthy
+        print("Waiting for all services to be healthy...")
+        time.sleep(5)  # Give services time to fully initialize
+        
+        ports = [8080, 8083, 8084]  # Patient Management, Treatment Prediction, Data Ingestion
+        for port in ports:
+            retries = 5
+            while retries > 0:
+                if check_service_health(port):
+                    break
+                print(f"Waiting for service on port {port} to be healthy... ({retries} retries left)")
+                time.sleep(2)
+                retries -= 1
+            if retries == 0:
+                print(f"Service on port {port} is not healthy")
+                return False
+        
+        # Run the tests
+        result = subprocess.run(
+            [sys.executable, '-m', 'tests.system_test'],
+            capture_output=True,
+            text=True
+        )
+        
+        # Print test output
+        if result.stdout:
+            print("\nTest output:")
+            print(result.stdout)
+        if result.stderr:
+            print("\nTest errors:")
+            print(result.stderr)
+        
+        return result.returncode == 0
+        
+    except Exception as e:
+        print(f"Error running tests: {str(e)}")
+        return False
 
 def start_services():
     """Start all required services"""
@@ -121,20 +162,26 @@ def start_services():
         
         print("\nAll services started!")
         
-        # Run the system tests
-        print("\nRunning system tests...")
-        subprocess.run([sys.executable, '-m', 'tests.system_test'])
+        # Run the tests
+        if not run_tests():
+            print("\n❌ Tests failed!")
+            sys.exit(1)
         
+        print("\n✅ All tests passed!")
+        
+        # Keep services running
+        print("\nServices are running. Press Ctrl+C to stop.")
+        while True:
+            time.sleep(1)
+            
     except KeyboardInterrupt:
         print("\nShutting down services...")
+    except Exception as e:
+        print(f"\nError: {str(e)}")
+    finally:
         for process in processes:
             process.terminate()
         sys.exit(0)
-    except Exception as e:
-        print(f"\nError: {str(e)}")
-        for process in processes:
-            process.terminate()
-        sys.exit(1)
 
 if __name__ == "__main__":
     start_services()
