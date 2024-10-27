@@ -2,19 +2,43 @@ import subprocess
 import time
 import sys
 import os
-from typing import List, Dict
-import requests
 import signal
+import requests
+from typing import List, Dict, Optional
 
 def verify_dynamodb():
     """Run DynamoDB verification"""
     result = subprocess.run([sys.executable, 'verify_dynamodb.py'])
     return result.returncode == 0
 
-def start_service(service: Dict):
+def kill_existing_processes():
+    """Kill any existing Python processes"""
+    try:
+        # Kill any existing Python processes
+        subprocess.run(['pkill', '-f', 'python'])
+        time.sleep(2)  # Wait for processes to be killed
+    except Exception as e:
+        print(f"Warning: Failed to kill existing processes: {str(e)}")
+
+def check_port(port: int) -> bool:
+    """Check if a port is in use"""
+    try:
+        response = requests.get(f"http://localhost:{port}/health", timeout=1)
+        return response.status_code == 200
+    except:
+        return False
+
+def start_service(service: Dict) -> Optional[subprocess.Popen]:
     """Start a single service"""
     try:
         print(f"\nStarting {service['name']} service...")
+        
+        # Check if service is already running
+        if check_port(service['port']):
+            print(f"{service['name']} is already running on port {service['port']}")
+            return None
+        
+        # Start the service
         process = subprocess.Popen(
             service['command'],
             stdout=subprocess.PIPE,
@@ -23,20 +47,21 @@ def start_service(service: Dict):
         )
         
         # Wait for service to start
-        time.sleep(5)
+        retries = 10
+        while retries > 0:
+            if check_port(service['port']):
+                print(f"{service['name']} service is healthy")
+                return process
+            print(f"Waiting for {service['name']} to start... ({retries} retries left)")
+            time.sleep(2)
+            retries -= 1
+        
+        print(f"Warning: Could not verify {service['name']} health")
         return process
         
     except Exception as e:
         print(f"Error starting {service['name']}: {str(e)}")
         return None
-
-def check_service_health(port: int) -> bool:
-    """Check if a service is healthy by attempting to connect"""
-    try:
-        response = requests.get(f"http://localhost:{port}/health")
-        return response.status_code == 200
-    except:
-        return False
 
 def start_services():
     """Start all required services"""
@@ -50,17 +75,17 @@ def start_services():
     services = [
         {
             'name': 'Patient Management',
-            'command': ['python', '-m', 'services.patient_management.app'],
+            'command': [sys.executable, '-m', 'services.patient_management.app'],
             'port': 8080
         },
         {
             'name': 'Treatment Prediction',
-            'command': ['python', '-m', 'services.treatment_prediction.main'],
+            'command': [sys.executable, '-m', 'services.treatment_prediction.main'],
             'port': 8083
         },
         {
             'name': 'Data Ingestion',
-            'command': ['python', '-m', 'services.data_ingestion.main'],
+            'command': [sys.executable, '-m', 'services.data_ingestion.main'],
             'port': 8084
         }
     ]
@@ -70,24 +95,15 @@ def start_services():
     try:
         print("Starting services...")
         
+        # Kill any existing processes
+        kill_existing_processes()
+        
         # Start each service
         for service in services:
             process = start_service(service)
             if process:
                 processes.append(process)
                 print(f"{service['name']} service started on port {service['port']}")
-                
-                # Check service health
-                retries = 3
-                while retries > 0:
-                    if check_service_health(service['port']):
-                        print(f"{service['name']} service is healthy")
-                        break
-                    retries -= 1
-                    time.sleep(2)
-                
-                if retries == 0:
-                    print(f"Warning: Could not verify {service['name']} health")
             else:
                 print(f"Failed to start {service['name']}")
                 # Cleanup already started processes

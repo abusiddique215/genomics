@@ -3,54 +3,39 @@ import json
 import time
 import sys
 from datetime import datetime, timedelta
-from typing import Dict, Any
 from decimal import Decimal
-import logging
-
-# Configure logging
-logging.basicConfig(level=logging.DEBUG)
-logger = logging.getLogger(__name__)
+from typing import Dict, Optional
 
 # API endpoints
-PATIENT_API = "http://localhost:8501"
+PATIENT_API = "http://localhost:8080"  # Updated port
 TREATMENT_API = "http://localhost:8083"
 DATA_INGESTION_API = "http://localhost:8084"
 
-class DecimalEncoder(json.JSONEncoder):
-    def default(self, obj):
-        if isinstance(obj, Decimal):
-            return str(obj)
-        return super(DecimalEncoder, self).default(obj)
-
-def make_request(method: str, url: str, json_data: Dict[str, Any] = None, max_retries: int = 3) -> requests.Response:
+def make_request(method: str, url: str, json_data: Optional[Dict] = None, max_retries: int = 3) -> requests.Response:
     """Make HTTP request with retries"""
     for attempt in range(max_retries):
         try:
-            logger.debug(f"Making {method} request to {url}")
+            print(f"\nMaking {method} request to {url}")
             if json_data:
-                logger.debug(f"Request data: {json.dumps(json_data, cls=DecimalEncoder, indent=2)}")
+                print(f"Request data: {json.dumps(json_data, indent=2)}")
             
             if method.upper() == 'GET':
                 response = requests.get(url, timeout=5)
             elif method.upper() == 'POST':
-                # Convert Decimal objects to strings for JSON serialization
-                if json_data:
-                    json_data = json.loads(json.dumps(json_data, cls=DecimalEncoder))
                 response = requests.post(url, json=json_data, timeout=5)
             else:
                 raise ValueError(f"Unsupported HTTP method: {method}")
             
-            logger.debug(f"Response status: {response.status_code}")
-            logger.debug(f"Response content: {response.text}")
+            print(f"Response status: {response.status_code}")
+            print(f"Response content: {json.dumps(response.json(), indent=2)}")
             
             response.raise_for_status()
             return response
             
         except requests.exceptions.RequestException as e:
             if attempt == max_retries - 1:
-                logger.error(f"Request failed after {max_retries} attempts: {str(e)}")
                 raise
-            logger.warning(f"Request failed, retrying... ({attempt + 1}/{max_retries})")
+            print(f"Request failed, retrying... ({attempt + 1}/{max_retries})")
             time.sleep(2)
 
 def verify_dynamodb_connection():
@@ -58,10 +43,9 @@ def verify_dynamodb_connection():
     print("\n=== Verifying DynamoDB Connection ===")
     try:
         # First check service health
-        logger.info("Checking service health...")
         health_response = make_request('GET', f"{PATIENT_API}/health")
         if health_response.status_code != 200:
-            logger.error("Health check failed")
+            print("Health check failed")
             return False
         
         # Create a test patient
@@ -87,23 +71,121 @@ def verify_dynamodb_connection():
             }
         }
         
-        logger.info("Creating test patient...")
         response = make_request('POST', f"{PATIENT_API}/patient", test_data)
         print("DynamoDB connection verified!")
         return True
     except Exception as e:
-        logger.error(f"DynamoDB connection failed: {str(e)}")
+        print(f"DynamoDB connection failed: {str(e)}")
+        return False
+
+def test_data_ingestion():
+    """Test data ingestion functionality"""
+    print("\n=== Testing Data Ingestion ===")
+    try:
+        # Create test patient
+        patient_data = {
+            "id": "TEST001",
+            "name": "Test Patient",
+            "age": 45,
+            "genomic_data": {
+                "gene_variants": {
+                    "BRCA1": "variant1",
+                    "BRCA2": "variant2"
+                },
+                "mutation_scores": {
+                    "BRCA1": "0.8",
+                    "BRCA2": "0.6"
+                }
+            },
+            "medical_history": {
+                "conditions": ["condition1", "condition2"],
+                "treatments": ["treatment1"],
+                "allergies": ["allergy1"],
+                "medications": ["med1", "med2"]
+            }
+        }
+        
+        response = make_request('POST', f"{PATIENT_API}/patient", patient_data)
+        return True
+    except Exception as e:
+        print(f"Error: {str(e)}")
+        return False
+
+def test_treatment_prediction():
+    """Test treatment prediction functionality"""
+    print("\n=== Testing Treatment Prediction ===")
+    try:
+        response = make_request('GET', f"{PATIENT_API}/patient/TEST001/treatment_recommendation")
+        return True
+    except Exception as e:
+        print(f"Error: {str(e)}")
+        return False
+
+def test_patient_management():
+    """Test patient management functionality"""
+    print("\n=== Testing Patient Management ===")
+    try:
+        # Get patient details
+        response = make_request('GET', f"{PATIENT_API}/patient/TEST001")
+        
+        # List all patients
+        response = make_request('GET', f"{PATIENT_API}/patient")
+        return True
+    except Exception as e:
+        print(f"Error: {str(e)}")
         return False
 
 def run_system_test():
-    """Run system tests"""
+    """Run all system tests"""
     # First verify DynamoDB connection
     if not verify_dynamodb_connection():
         print("\n❌ DynamoDB connection failed! Please check your setup.")
         sys.exit(1)
     
-    print("\n✅ Initial verification passed!")
-    sys.exit(0)
+    tests = [
+        ("Data Ingestion", test_data_ingestion),
+        ("Treatment Prediction", test_treatment_prediction),
+        ("Patient Management", test_patient_management)
+    ]
+    
+    results = []
+    
+    try:
+        for test_name, test_func in tests:
+            print(f"\nRunning {test_name} test...")
+            try:
+                success = test_func()
+                results.append((test_name, success))
+                if success:
+                    print(f"✅ {test_name} test passed!")
+                else:
+                    print(f"❌ {test_name} test failed!")
+            except Exception as e:
+                print(f"❌ {test_name} test failed with error: {str(e)}")
+                results.append((test_name, False))
+            time.sleep(1)
+        
+        # Print summary
+        print("\n=== Test Summary ===")
+        all_passed = True
+        for test_name, success in results:
+            status = "✅ PASSED" if success else "❌ FAILED"
+            print(f"{test_name}: {status}")
+            all_passed = all_passed and success
+        
+        if all_passed:
+            print("\n✅ All System Tests Passed!")
+            sys.exit(0)
+        else:
+            print("\n❌ Some Tests Failed!")
+            sys.exit(1)
+            
+    except KeyboardInterrupt:
+        print("\nTests interrupted by user")
+        sys.exit(1)
+    except Exception as e:
+        print(f"\nUnexpected error during testing: {str(e)}")
+        sys.exit(1)
 
 if __name__ == "__main__":
     run_system_test()
