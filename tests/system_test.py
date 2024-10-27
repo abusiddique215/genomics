@@ -3,21 +3,43 @@ import json
 import time
 import sys
 from datetime import datetime, timedelta
-from decimal import Decimal
 from typing import Dict, Optional
+import logging
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 # API endpoints
-PATIENT_API = "http://localhost:8080"  # Updated port
+PATIENT_API = "http://localhost:8080"
 TREATMENT_API = "http://localhost:8083"
 DATA_INGESTION_API = "http://localhost:8084"
+
+def wait_for_service(url: str, max_retries: int = 30) -> bool:
+    """Wait for a service to become available"""
+    logger.info(f"Waiting for service at {url}")
+    for i in range(max_retries):
+        try:
+            response = requests.get(f"{url}/health", timeout=2)
+            if response.status_code == 200:
+                logger.info(f"Service at {url} is healthy")
+                return True
+        except requests.exceptions.RequestException:
+            pass
+        logger.info(f"Service not ready, retrying... ({i + 1}/{max_retries})")
+        time.sleep(2)
+    return False
 
 def make_request(method: str, url: str, json_data: Optional[Dict] = None, max_retries: int = 3) -> requests.Response:
     """Make HTTP request with retries"""
     for attempt in range(max_retries):
         try:
-            print(f"\nMaking {method} request to {url}")
+            logger.info(f"Making {method} request to {url}")
             if json_data:
-                print(f"Request data: {json.dumps(json_data, indent=2)}")
+                logger.info(f"Request data: {json.dumps(json_data, indent=2)}")
             
             if method.upper() == 'GET':
                 response = requests.get(url, timeout=5)
@@ -26,8 +48,8 @@ def make_request(method: str, url: str, json_data: Optional[Dict] = None, max_re
             else:
                 raise ValueError(f"Unsupported HTTP method: {method}")
             
-            print(f"Response status: {response.status_code}")
-            print(f"Response content: {json.dumps(response.json(), indent=2)}")
+            logger.info(f"Response status: {response.status_code}")
+            logger.info(f"Response content: {json.dumps(response.json(), indent=2)}")
             
             response.raise_for_status()
             return response
@@ -35,52 +57,29 @@ def make_request(method: str, url: str, json_data: Optional[Dict] = None, max_re
         except requests.exceptions.RequestException as e:
             if attempt == max_retries - 1:
                 raise
-            print(f"Request failed, retrying... ({attempt + 1}/{max_retries})")
+            logger.warning(f"Request failed, retrying... ({attempt + 1}/{max_retries})")
             time.sleep(2)
 
-def verify_dynamodb_connection():
-    """Verify DynamoDB connection"""
-    print("\n=== Verifying DynamoDB Connection ===")
-    try:
-        # First check service health
-        health_response = make_request('GET', f"{PATIENT_API}/health")
-        if health_response.status_code != 200:
-            print("Health check failed")
+def verify_services():
+    """Verify all services are running"""
+    logger.info("Verifying services...")
+    services = [
+        ("Patient Management", PATIENT_API),
+        ("Treatment Prediction", TREATMENT_API),
+        ("Data Ingestion", DATA_INGESTION_API)
+    ]
+    
+    for name, url in services:
+        if not wait_for_service(url):
+            logger.error(f"{name} service is not available")
             return False
-        
-        # Create a test patient
-        test_data = {
-            "id": "TEST000",
-            "name": "Connection Test",
-            "age": 30,
-            "genomic_data": {
-                "gene_variants": {
-                    "BRCA1": "variant1",
-                    "BRCA2": "variant2"
-                },
-                "mutation_scores": {
-                    "BRCA1": "0.8",
-                    "BRCA2": "0.6"
-                }
-            },
-            "medical_history": {
-                "conditions": ["test_condition"],
-                "treatments": ["test_treatment"],
-                "allergies": [],
-                "medications": []
-            }
-        }
-        
-        response = make_request('POST', f"{PATIENT_API}/patient", test_data)
-        print("DynamoDB connection verified!")
-        return True
-    except Exception as e:
-        print(f"DynamoDB connection failed: {str(e)}")
-        return False
+        logger.info(f"{name} service verified")
+    
+    return True
 
 def test_data_ingestion():
     """Test data ingestion functionality"""
-    print("\n=== Testing Data Ingestion ===")
+    logger.info("Testing Data Ingestion")
     try:
         # Create test patient
         patient_data = {
@@ -108,22 +107,22 @@ def test_data_ingestion():
         response = make_request('POST', f"{PATIENT_API}/patient", patient_data)
         return True
     except Exception as e:
-        print(f"Error: {str(e)}")
+        logger.error(f"Data ingestion test failed: {str(e)}")
         return False
 
 def test_treatment_prediction():
     """Test treatment prediction functionality"""
-    print("\n=== Testing Treatment Prediction ===")
+    logger.info("Testing Treatment Prediction")
     try:
         response = make_request('GET', f"{PATIENT_API}/patient/TEST001/treatment_recommendation")
         return True
     except Exception as e:
-        print(f"Error: {str(e)}")
+        logger.error(f"Treatment prediction test failed: {str(e)}")
         return False
 
 def test_patient_management():
     """Test patient management functionality"""
-    print("\n=== Testing Patient Management ===")
+    logger.info("Testing Patient Management")
     try:
         # Get patient details
         response = make_request('GET', f"{PATIENT_API}/patient/TEST001")
@@ -132,14 +131,16 @@ def test_patient_management():
         response = make_request('GET', f"{PATIENT_API}/patient")
         return True
     except Exception as e:
-        print(f"Error: {str(e)}")
+        logger.error(f"Patient management test failed: {str(e)}")
         return False
 
 def run_system_test():
     """Run all system tests"""
-    # First verify DynamoDB connection
-    if not verify_dynamodb_connection():
-        print("\n❌ DynamoDB connection failed! Please check your setup.")
+    logger.info("Starting system tests")
+    
+    # First verify all services are running
+    if not verify_services():
+        logger.error("Service verification failed")
         sys.exit(1)
     
     tests = [
@@ -152,39 +153,39 @@ def run_system_test():
     
     try:
         for test_name, test_func in tests:
-            print(f"\nRunning {test_name} test...")
+            logger.info(f"\nRunning {test_name} test...")
             try:
                 success = test_func()
                 results.append((test_name, success))
                 if success:
-                    print(f"✅ {test_name} test passed!")
+                    logger.info(f"✅ {test_name} test passed!")
                 else:
-                    print(f"❌ {test_name} test failed!")
+                    logger.error(f"❌ {test_name} test failed!")
             except Exception as e:
-                print(f"❌ {test_name} test failed with error: {str(e)}")
+                logger.error(f"❌ {test_name} test failed with error: {str(e)}")
                 results.append((test_name, False))
             time.sleep(1)
         
         # Print summary
-        print("\n=== Test Summary ===")
+        logger.info("\n=== Test Summary ===")
         all_passed = True
         for test_name, success in results:
             status = "✅ PASSED" if success else "❌ FAILED"
-            print(f"{test_name}: {status}")
+            logger.info(f"{test_name}: {status}")
             all_passed = all_passed and success
         
         if all_passed:
-            print("\n✅ All System Tests Passed!")
+            logger.info("\n✅ All System Tests Passed!")
             sys.exit(0)
         else:
-            print("\n❌ Some Tests Failed!")
+            logger.error("\n❌ Some Tests Failed!")
             sys.exit(1)
             
     except KeyboardInterrupt:
-        print("\nTests interrupted by user")
+        logger.warning("\nTests interrupted by user")
         sys.exit(1)
     except Exception as e:
-        print(f"\nUnexpected error during testing: {str(e)}")
+        logger.error(f"\nUnexpected error during testing: {str(e)}")
         sys.exit(1)
 
 if __name__ == "__main__":
