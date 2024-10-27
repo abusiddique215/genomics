@@ -3,7 +3,9 @@ import time
 import sys
 import requests
 import logging
+import threading
 from typing import List, Dict, Optional
+from queue import Queue, Empty
 
 # Configure logging
 logging.basicConfig(
@@ -12,9 +14,16 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+def log_stream(stream, prefix: str, queue: Queue):
+    """Log output from a stream"""
+    for line in iter(stream.readline, b''):
+        line = line.decode('utf-8').rstrip()
+        queue.put(f"{prefix}: {line}")
+
 class ServiceManager:
     def __init__(self):
         self.processes = []
+        self.output_queue = Queue()
         self.services = [
             {
                 'name': 'DynamoDB',
@@ -45,12 +54,16 @@ class ServiceManager:
     def check_health(self, service: Dict) -> bool:
         """Check if a service is healthy"""
         try:
-            response = requests.get(f"http://localhost:{service['port']}/health", timeout=2)
-            return response.status_code == service['health_code']
+            if service['name'] == 'DynamoDB':
+                response = requests.post('http://localhost:8000', timeout=2)
+                return response.status_code == 400
+            else:
+                response = requests.get(f"http://localhost:{service['port']}/health", timeout=2)
+                return response.status_code == service['health_code']
         except:
             return False
 
-    def wait_for_service(self, service: Dict, max_retries: int = 10) -> bool:
+    def wait_for_service(self, service: Dict, max_retries: int = 30) -> bool:
         """Wait for a service to become healthy"""
         logger.info(f"Waiting for {service['name']} to start...")
         for i in range(max_retries):
@@ -59,6 +72,14 @@ class ServiceManager:
                 return True
             logger.info(f"Waiting... ({i + 1}/{max_retries})")
             time.sleep(2)
+            
+            # Print any queued output
+            try:
+                while True:
+                    print(self.output_queue.get_nowait())
+            except Empty:
+                pass
+                
         logger.error(f"{service['name']} failed to start")
         return False
 
@@ -66,16 +87,43 @@ class ServiceManager:
         """Start a single service"""
         try:
             logger.info(f"Starting {service['name']}...")
+            
+            # Start the process with pipe for output
             process = subprocess.Popen(
                 service['command'],
                 stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE
+                stderr=subprocess.PIPE,
+                bufsize=1,
+                universal_newlines=True
             )
+            
+            # Start threads to handle output
+            threading.Thread(
+                target=log_stream,
+                args=(process.stdout, f"{service['name']} OUT", self.output_queue),
+                daemon=True
+            ).start()
+            threading.Thread(
+                target=log_stream,
+                args=(process.stderr, f"{service['name']} ERR", self.output_queue),
+                daemon=True
+            ).start()
+            
             if self.wait_for_service(service):
                 self.processes.append(process)
                 return process
+                
+            # If service failed to start, print its output
+            logger.error(f"{service['name']} output:")
+            try:
+                while True:
+                    print(self.output_queue.get_nowait())
+            except Empty:
+                pass
+                
             process.terminate()
             return None
+            
         except Exception as e:
             logger.error(f"Error starting {service['name']}: {str(e)}")
             return None
@@ -89,9 +137,11 @@ class ServiceManager:
                 capture_output=True,
                 text=True
             )
+            print(result.stdout)
+            if result.stderr:
+                print(result.stderr)
             if result.returncode != 0:
                 logger.error("DynamoDB setup failed")
-                logger.error(result.stderr)
                 return False
             logger.info("DynamoDB setup completed")
             return True
@@ -167,9 +217,12 @@ class ServiceManager:
             logger.info("\n✅ System is running and all tests passed!")
             logger.info("Press Ctrl+C to stop")
             
-            # Keep the system running
+            # Keep the system running and print output
             while True:
-                time.sleep(1)
+                try:
+                    print(self.output_queue.get(timeout=1))
+                except Empty:
+                    pass
                 
         except KeyboardInterrupt:
             logger.info("\nShutting down...")
