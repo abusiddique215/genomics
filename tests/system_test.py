@@ -104,7 +104,7 @@ def test_data_ingestion():
             }
         }
         
-        response = make_request('POST', f"{PATIENT_API}/patient", patient_data)
+        response = make_request('POST', f"{PATIENT_API}/patients", patient_data)
         return True
     except Exception as e:
         logger.error(f"Data ingestion test failed: {str(e)}")
@@ -114,7 +114,7 @@ def test_treatment_prediction():
     """Test treatment prediction functionality"""
     logger.info("Testing Treatment Prediction")
     try:
-        response = make_request('GET', f"{PATIENT_API}/patient/TEST001/treatment_recommendation")
+        response = make_request('GET', f"{PATIENT_API}/patients/TEST001/treatment_recommendation")
         return True
     except Exception as e:
         logger.error(f"Treatment prediction test failed: {str(e)}")
@@ -125,10 +125,10 @@ def test_patient_management():
     logger.info("Testing Patient Management")
     try:
         # Get patient details
-        response = make_request('GET', f"{PATIENT_API}/patient/TEST001")
+        response = make_request('GET', f"{PATIENT_API}/patients/TEST001")
         
         # List all patients
-        response = make_request('GET', f"{PATIENT_API}/patient")
+        response = make_request('GET', f"{PATIENT_API}/patients")
         return True
     except Exception as e:
         logger.error(f"Patient management test failed: {str(e)}")
