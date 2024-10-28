@@ -16,9 +16,13 @@ logger = logging.getLogger(__name__)
 
 def log_stream(stream, prefix: str, queue: Queue):
     """Log output from a stream"""
-    for line in iter(stream.readline, b''):
-        line = line.decode('utf-8').rstrip()
-        queue.put(f"{prefix}: {line}")
+    try:
+        for line in iter(stream.readline, ''):
+            line = line.rstrip()
+            if line:  # Only log non-empty lines
+                queue.put(f"{prefix}: {line}")
+    except Exception as e:
+        logger.error(f"Error in log stream: {str(e)}")
 
 class ServiceManager:
     def __init__(self):
@@ -137,9 +141,9 @@ class ServiceManager:
                 capture_output=True,
                 text=True
             )
-            print(result.stdout)
+            print(result.stdout.strip())
             if result.stderr:
-                print(result.stderr)
+                print(result.stderr.strip())
             if result.returncode != 0:
                 logger.error("DynamoDB setup failed")
                 return False
@@ -159,10 +163,10 @@ class ServiceManager:
                 text=True
             )
             print("\nTest Output:")
-            print(result.stdout)
+            print(result.stdout.strip())
             if result.stderr:
                 print("\nTest Errors:")
-                print(result.stderr)
+                print(result.stderr.strip())
             return result.returncode == 0
         except Exception as e:
             logger.error(f"Error running tests: {str(e)}")
