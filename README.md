@@ -1,76 +1,194 @@
-# Genomics Treatment API
+# AI-Enhanced Treatment Recommendation System
 
-This project is an AI-enhanced personalized treatment recommendation system using genomics data. It analyzes a patient's genetic profile and medical history to suggest tailored treatment options and predict treatment efficacy.
+A scalable, microservices-based system that analyzes genomics data and medical history to provide personalized treatment recommendations.
 
-## Features
+## System Architecture
 
-- Genomics data ingestion and preprocessing
-- AI model training for treatment prediction
-- Personalized treatment recommendations
-- Patient data management
-- Integration with Power BI for data visualization
+The system consists of several microservices:
 
-## Setup
+- **Patient Management Service** (Port 8080)
+  - Handles patient data CRUD operations
+  - Integrates with DynamoDB for data persistence
+  - Provides treatment recommendation endpoints
+
+- **Treatment Prediction Service** (Port 8083)
+  - AI-powered treatment recommendation engine
+  - Uses TensorFlow for prediction models
+  - Analyzes genomic markers and medical history
+
+- **Data Ingestion Service** (Port 8084)
+  - Handles genomics data ingestion
+  - Supports multiple data formats (CSV, FASTA)
+  - Performs data validation and preprocessing
+
+- **DynamoDB Local** (Port 8000)
+  - Local DynamoDB instance for development
+  - Stores patient records and medical history
+  - Maintains treatment outcomes
+
+## Prerequisites
+
+- Python 3.10 or higher
+- Java Runtime Environment (for DynamoDB Local)
+- Virtual environment (recommended)
+
+## Installation
 
 1. Clone the repository:
-   ```
-   git clone https://github.com/yourusername/genomics-treatment-api.git
-   cd genomics-treatment-api
-   ```
+```bash
+git clone <repository-url>
+cd genomics
+```
 
-2. Set up environment variables:
-   Create a `.env` file in the root directory with the following content:
-   ```
-   AWS_ACCESS_KEY_ID=your_aws_access_key
-   AWS_SECRET_ACCESS_KEY=your_aws_secret_key
-   ```
+2. Create and activate a virtual environment:
+```bash
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+```
 
-3. Build and run the services:
-   ```
-   docker-compose up --build
-   ```
+3. Install dependencies:
+```bash
+pip install -r requirements.txt
+```
+
+## Running the System
+
+The system can be started using a single command:
+
+```bash
+python run_system.py
+```
+
+This will:
+1. Start DynamoDB Local
+2. Initialize required database tables
+3. Start all microservices
+4. Run system tests to verify functionality
 
 ## API Endpoints
 
-- Data Ingestion: `POST http://localhost:8001/ingest/`
-- Preprocessing: `POST http://localhost:8002/preprocess/{file_name}`
-- AI Model Training: `POST http://localhost:8003/train/{file_name}`
-- Treatment Prediction: `POST http://localhost:8004/predict/{model_name}`
+### Patient Management Service (8080)
 
-## Running Tests
+- `GET /patients` - List all patients
+- `GET /patients/{id}` - Get patient details
+- `POST /patients` - Create new patient
+- `GET /patients/{id}/treatment_recommendation` - Get treatment recommendation
 
-Run the tests using pytest:
+### Treatment Prediction Service (8083)
 
+- `POST /predict` - Generate treatment prediction
+- `GET /health` - Service health check
+
+### Data Ingestion Service (8084)
+
+- `POST /ingest/genomics` - Ingest genomics data
+- `POST /ingest/medical-history` - Ingest medical history
+- `GET /health` - Service health check
+
+## Data Models
+
+### Patient Record
+```json
+{
+  "id": "string",
+  "name": "string",
+  "age": number,
+  "genomic_data": {
+    "gene_variants": {
+      "BRCA1": "string",
+      "BRCA2": "string"
+    },
+    "mutation_scores": {
+      "BRCA1": "string",
+      "BRCA2": "string"
+    }
+  },
+  "medical_history": {
+    "conditions": ["string"],
+    "treatments": ["string"],
+    "allergies": ["string"],
+    "medications": ["string"]
+  }
+}
 ```
-pytest
+
+### Treatment Recommendation
+```json
+{
+  "recommended_treatment": "string",
+  "efficacy": number,
+  "confidence_level": "string"
+}
 ```
 
-## Deployment
+## Development
 
-This project is designed to be deployed as serverless functions. Refer to `template.yaml` for the AWS SAM template.
+### Project Structure
+```
+genomics/
+├── services/
+│   ├── patient_management/
+│   ├── treatment_prediction/
+│   ├── data_ingestion/
+│   └── utils/
+├── tests/
+├── requirements.txt
+└── run_system.py
+```
+
+### Running Tests
+
+System tests are automatically run during startup, but can also be run manually:
+
+```bash
+python -m tests.system_test
+```
+
+### Logging
+
+The system uses structured logging with different levels:
+- INFO: Service status, health checks
+- DEBUG: Detailed operation logs
+- ERROR: Error conditions
+
+Logs are filtered to show relevant information while running.
+
+## Monitoring
+
+The system provides real-time status updates and health checks:
+- Service startup status
+- Database connectivity
+- API endpoint health
+- Treatment prediction status
+
+## Shutdown
+
+To gracefully shut down all services:
+1. Press Ctrl+C in the terminal running `run_system.py`
+2. The system will automatically clean up all processes
+
+## Security
+
+- All services use CORS middleware
+- DynamoDB uses secure credentials
+- Input validation on all endpoints
+- Error handling and logging
+
+## Future Improvements
+
+1. Add authentication and authorization
+2. Implement more sophisticated AI models
+3. Add real-time monitoring dashboard
+4. Implement data backup and recovery
+5. Add support for more genomic data formats
 
 ## Contributing
 
-Please read CONTRIBUTING.md for details on our code of conduct, and the process for submitting pull requests.
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Submit a pull request
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE.md file for details.
-
-## Dashboard
-
-The project includes a Plotly Dash dashboard for visualizing patient data and treatment efficacy. To access the dashboard:
-
-1. Ensure all services are running (`docker-compose up --build`)
-2. Open a web browser and navigate to `http://localhost:8005/dashboard`
-
-The dashboard provides interactive visualizations of patient age distribution and treatment efficacy.
-
-## AWS Setup
-
-This project uses the following AWS services:
-
-1. DynamoDB: For storing patient data
-2. S3: For storing genomic data files
-
-Make sure to set up these services and update the `.env` file with the necessary credentials and configurations.
+This project is licensed under the MIT License - see the LICENSE file for details.

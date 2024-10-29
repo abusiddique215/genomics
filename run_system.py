@@ -44,7 +44,11 @@ def should_log_line(line: str, prefix: str) -> bool:
         'CanonicalRequest:',
         'StringToSign:',
         'Signature:',
-        'Making request for'
+        'Making request for',
+        'uvicorn.error:',
+        'INFO:uvicorn',
+        'Waiting for application',
+        'Finished server process'
     ]):
         return False
         
@@ -65,6 +69,16 @@ def should_log_line(line: str, prefix: str) -> bool:
         return True
         
     return False
+
+def format_json(text: str) -> str:
+    """Format JSON output with proper indentation and commas"""
+    lines = text.split('\n')
+    formatted_lines = []
+    for line in lines:
+        if '"' in line and ':' in line and ',' not in line and not line.strip().endswith('{') and not line.strip().endswith('['):
+            line = line.rstrip() + ','
+        formatted_lines.append(line)
+    return '\n'.join(formatted_lines)
 
 class ServiceManager:
     def __init__(self):
@@ -179,9 +193,9 @@ class ServiceManager:
                 capture_output=True,
                 text=True
             )
-            print(result.stdout.strip())
+            print(format_json(result.stdout.strip()))
             if result.stderr:
-                print(result.stderr.strip())
+                print(format_json(result.stderr.strip()))
             if result.returncode != 0:
                 logger.error("DynamoDB setup failed")
                 return False
@@ -201,10 +215,10 @@ class ServiceManager:
                 text=True
             )
             print("\nTest Output:")
-            print(result.stdout.strip())
+            print(format_json(result.stdout.strip()))
             if result.stderr:
                 print("\nTest Errors:")
-                print(result.stderr.strip())
+                print(format_json(result.stderr.strip()))
             return result.returncode == 0
         except Exception as e:
             logger.error(f"Error running tests: {str(e)}")
@@ -268,7 +282,8 @@ class ServiceManager:
             while True:
                 try:
                     line = self.output_queue.get(timeout=1)
-                    print(line)
+                    if not any(x in line for x in ['Shutting down', 'shutdown complete']):
+                        print(line)
                 except Empty:
                     pass
                 
