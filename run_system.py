@@ -10,7 +10,8 @@ from queue import Queue, Empty
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
+    format='%(asctime)s - %(message)s',
+    datefmt='%H:%M:%S'
 )
 logger = logging.getLogger(__name__)
 
@@ -18,11 +19,52 @@ def log_stream(stream, prefix: str, queue: Queue):
     """Log output from a stream"""
     try:
         for line in iter(stream.readline, ''):
-            line = line.rstrip()
-            if line:  # Only log non-empty lines
+            line = line.strip()
+            if line and should_log_line(line, prefix):
                 queue.put(f"{prefix}: {line}")
     except Exception as e:
         logger.error(f"Error in log stream: {str(e)}")
+
+def should_log_line(line: str, prefix: str) -> bool:
+    """Filter log lines to show only important information"""
+    # Skip debug and noisy logs
+    if any(x in line for x in [
+        'DEBUG:',
+        'POST /',
+        'content-type:',
+        'host:localhost',
+        'x-amz-',
+        'AWS4-HMAC-SHA256',
+        'DEBUG:boto',
+        'DEBUG:urllib3',
+        'DEBUG:asyncio',
+        'b\'{',
+        'Response headers:',
+        'Response body:',
+        'CanonicalRequest:',
+        'StringToSign:',
+        'Signature:',
+        'Making request for'
+    ]):
+        return False
+        
+    # Always show important service messages
+    if any(x in line for x in [
+        'Started server process',
+        'Application startup complete',
+        'running on http://',
+        'Created patient record',
+        'Retrieved patient',
+        'Generated prediction',
+        'Treatment recommendation received'
+    ]):
+        return True
+        
+    # Show errors and warnings
+    if 'ERR' in prefix and ('ERROR' in line or 'WARNING' in line):
+        return True
+        
+    return False
 
 class ServiceManager:
     def __init__(self):
@@ -69,12 +111,11 @@ class ServiceManager:
 
     def wait_for_service(self, service: Dict, max_retries: int = 30) -> bool:
         """Wait for a service to become healthy"""
-        logger.info(f"Waiting for {service['name']} to start...")
+        logger.info(f"Starting {service['name']}...")
         for i in range(max_retries):
             if self.check_health(service):
                 logger.info(f"{service['name']} is healthy")
                 return True
-            logger.info(f"Waiting... ({i + 1}/{max_retries})")
             time.sleep(2)
             
             # Print any queued output
@@ -90,15 +131,13 @@ class ServiceManager:
     def start_service(self, service: Dict) -> Optional[subprocess.Popen]:
         """Start a single service"""
         try:
-            logger.info(f"Starting {service['name']}...")
-            
             # Start the process with pipe for output
             process = subprocess.Popen(
                 service['command'],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                bufsize=1,
-                universal_newlines=True
+                universal_newlines=True,
+                bufsize=1
             )
             
             # Start threads to handle output
@@ -118,7 +157,6 @@ class ServiceManager:
                 return process
                 
             # If service failed to start, print its output
-            logger.error(f"{service['name']} output:")
             try:
                 while True:
                     print(self.output_queue.get_nowait())
@@ -199,6 +237,8 @@ class ServiceManager:
     def run(self):
         """Run the complete system"""
         try:
+            print("\n=== Starting AI-Enhanced Treatment Recommendation System ===\n")
+            
             # Clean up any existing processes
             self.cleanup()
             
@@ -207,7 +247,6 @@ class ServiceManager:
                 if not self.start_service(service):
                     logger.error(f"Failed to start {service['name']}")
                     return False
-                logger.info(f"{service['name']} started successfully")
             
             # Set up DynamoDB tables
             if not self.setup_dynamodb():
@@ -218,22 +257,28 @@ class ServiceManager:
                 logger.error("Tests failed")
                 return False
             
-            logger.info("\n✅ System is running and all tests passed!")
-            logger.info("Press Ctrl+C to stop")
+            print("\n=== System Status ===")
+            print("✅ All services are running")
+            print("✅ DynamoDB tables are configured")
+            print("✅ All system tests passed")
+            print("\nThe system is ready to process genomics data and provide treatment recommendations.")
+            print("Press Ctrl+C to stop all services.\n")
             
-            # Keep the system running and print output
+            # Keep the system running and print filtered output
             while True:
                 try:
-                    print(self.output_queue.get(timeout=1))
+                    line = self.output_queue.get(timeout=1)
+                    print(line)
                 except Empty:
                     pass
                 
         except KeyboardInterrupt:
-            logger.info("\nShutting down...")
+            print("\nShutting down services...")
         except Exception as e:
             logger.error(f"Error: {str(e)}")
         finally:
             self.cleanup()
+            print("\nSystem shutdown complete.")
 
 if __name__ == "__main__":
     manager = ServiceManager()
