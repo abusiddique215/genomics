@@ -24,48 +24,44 @@ wheels/
 venv/
 ENV/
 env/
-genomics/
+.env
 
-# IDEs and Editors
-.vscode/
+# IDE
 .idea/
+.vscode/
 *.swp
 *.swo
-*~
+.project
+.pydevproject
+.settings/
 
-# OS generated files
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
+# DynamoDB Local
+shared-local-instance.db
+DynamoDBLocal.jar
+DynamoDBLocal_lib/
+dynamodb-local-metadata.json
 
 # Logs
 *.log
+logs/
+log/
 
-# Jupyter Notebook
-.ipynb_checkpoints
+# Test coverage
+.coverage
+coverage.xml
+htmlcov/
 
-# TensorFlow model files
-*.h5
+# Documentation
+site/
+docs/_build/
 
-# AWS
-.aws/
+# System specific
+.DS_Store
+Thumbs.db
 
-# Environment variables
-.env
-
-# Power BI
-*.pbix
-
-# Other
+# Project specific
 *.bak
 *.tmp
 *.temp
-
-# Large files
-*.dylib
-*.so
-*.dll
+test_data/
+.pytest_cache/
