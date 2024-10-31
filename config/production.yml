@@ -1,0 +1,82 @@
+# Production environment configuration
+
+# Service Ports - Using standard ports in production
+ports:
+  dynamodb: 8000
+  patient_management: 80
+  treatment_prediction: 80
+  data_ingestion: 80
+
+# Database Configuration
+database:
+  endpoint: ${DYNAMODB_ENDPOINT}
+  region: ${AWS_REGION}
+  tables:
+    patients: ${PATIENTS_TABLE}
+    patient_progress: ${PROGRESS_TABLE}
+
+# Service URLs - Using internal AWS service discovery
+services:
+  patient_management: ${PATIENT_SERVICE_URL}
+  treatment_prediction: ${PREDICTION_SERVICE_URL}
+  data_ingestion: ${INGESTION_SERVICE_URL}
+
+# AI Model Configuration
+model:
+  path: /opt/models/treatment_prediction
+  version: ${MODEL_VERSION}
+  batch_size: 64
+  threshold: 0.9
+
+# Logging Configuration
+logging:
+  level: INFO
+  format: '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+  file: /var/log/app.log
+  max_size: 100MB
+  backup_count: 10
+
+# Security Configuration
+security:
+  jwt_secret: ${JWT_SECRET}
+  token_expiry: 1800
+  cors_origins: ${CORS_ORIGINS}
+  allowed_headers:
+    - Content-Type
+    - Authorization
+    - X-Request-ID
+
+# Monitoring Configuration
+monitoring:
+  health_check_interval: 60
+  metrics_port: 9090
+  enable_prometheus: true
+
+# Feature Flags
+features:
+  enable_ai_predictions: true
+  enable_batch_processing: true
+  enable_real_time_updates: true
+  enable_caching: true
+
+# Cache Configuration
+cache:
+  type: redis
+  url: ${REDIS_URL}
+  ttl: 1800
+  max_size: 5000
+
+# API Configuration
+api:
+  version: v1
+  rate_limit: 1000
+  timeout: 15
+  pagination:
+    default_limit: 50
+    max_limit: 200
+
+# Error Handling
+errors:
+  include_stacktrace: false
+  log_all_errors: true
+  notify_admin: true

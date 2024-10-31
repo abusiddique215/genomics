@@ -1,66 +1,80 @@
-version: '3'
+version: '3.8'
+
 services:
-  data_ingestion:
-    build: ./services/data_ingestion
+  dynamodb:
+    image: amazon/dynamodb-local:latest
+    container_name: dynamodb-local
     ports:
-      - "8001:8000"
-    environment:
-      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
-      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
-      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}
-      - S3_BUCKET_NAME=${S3_BUCKET_NAME}
-  
-  preprocessing:
-    build: ./services/preprocessing
-    ports:
-      - "8002:8000"
-    environment:
-      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
-      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
-  
-  ai_model:
-    build: ./services/ai_model
-    ports:
-      - "8003:8000"
-    environment:
-      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
-      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
-  
-  treatment_prediction:
-    build: ./services/treatment_prediction
-    ports:
-      - "8004:8000"
-    environment:
-      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
-      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
-  
-  dashboard:
-    build: ./services/dashboard
-    ports:
-      - "8005:8000"
-    environment:
-      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
-      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
-      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}
-  
-  powerbi_integration:
-    build: ./services/powerbi_integration
-    ports:
-      - "8006:8000"
-  patient_tracking:
-    build: ./services/patient_tracking
-    ports:
-      - "8007:8000"
-  rag_pipeline:
+      - "8000:8000"
+    command: "-jar DynamoDBLocal.jar -sharedDb"
+    networks:
+      - genomics-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  patient-management:
     build:
       context: .
-      dockerfile: Dockerfile
-    command: uvicorn services.rag_pipeline.main:app --host 0.0.0.0 --port 8006
-    volumes:
-      - .:/app
+      dockerfile: services/patient_management/Dockerfile
+    container_name: patient-management
     ports:
-      - "8006:8006"
-    env_file:
-      - .env
+      - "8080:8080"
+    environment:
+      - DYNAMODB_ENDPOINT=http://dynamodb:8000
+      - TREATMENT_PREDICTION_URL=http://treatment-prediction:8083
     depends_on:
-      - patient_management
+      dynamodb:
+        condition: service_healthy
+    networks:
+      - genomics-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  treatment-prediction:
+    build:
+      context: .
+      dockerfile: services/treatment_prediction/Dockerfile
+    container_name: treatment-prediction
+    ports:
+      - "8083:8083"
+    environment:
+      - MODEL_PATH=/app/models
+    volumes:
+      - ./models:/app/models
+    networks:
+      - genomics-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8083/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  data-ingestion:
+    build:
+      context: .
+      dockerfile: services/data_ingestion/Dockerfile
+    container_name: data-ingestion
+    ports:
+      - "8084:8084"
+    environment:
+      - PATIENT_API_URL=http://patient-management:8080
+    depends_on:
+      - patient-management
+    networks:
+      - genomics-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8084/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+networks:
+  genomics-net:
+    name: genomics-network
+    driver: bridge

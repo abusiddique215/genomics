@@ -1,0 +1,83 @@
+# Default configuration for development environment
+
+# Service Ports
+ports:
+  dynamodb: 8000
+  patient_management: 8080
+  treatment_prediction: 8083
+  data_ingestion: 8084
+
+# Database Configuration
+database:
+  endpoint: http://localhost:8000
+  region: us-west-2
+  tables:
+    patients: patients
+    patient_progress: patient_progress
+
+# Service URLs
+services:
+  patient_management: http://localhost:8080
+  treatment_prediction: http://localhost:8083
+  data_ingestion: http://localhost:8084
+
+# AI Model Configuration
+model:
+  path: models/treatment_prediction
+  version: v1
+  batch_size: 32
+  threshold: 0.8
+
+# Logging Configuration
+logging:
+  level: DEBUG
+  format: '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+  file: logs/app.log
+  max_size: 10MB
+  backup_count: 5
+
+# Security Configuration
+security:
+  jwt_secret: ${JWT_SECRET}
+  token_expiry: 3600
+  cors_origins:
+    - http://localhost:3000
+    - http://localhost:8080
+  allowed_headers:
+    - Content-Type
+    - Authorization
+
+# Monitoring Configuration
+monitoring:
+  health_check_interval: 30
+  metrics_port: 9090
+  enable_prometheus: true
+
+# Feature Flags
+features:
+  enable_ai_predictions: true
+  enable_batch_processing: false
+  enable_real_time_updates: true
+  enable_caching: true
+
+# Cache Configuration
+cache:
+  type: redis
+  url: ${REDIS_URL}
+  ttl: 3600
+  max_size: 1000
+
+# API Configuration
+api:
+  version: v1
+  rate_limit: 100
+  timeout: 30
+  pagination:
+    default_limit: 10
+    max_limit: 100
+
+# Error Handling
+errors:
+  include_stacktrace: true
+  log_all_errors: true
+  notify_admin: false
