@@ -1,100 +1,135 @@
-from fastapi import HTTPException
-from typing import Dict, Any, Optional
+from typing import Type, Dict, Any, Optional, Callable
+from fastapi import HTTPException, Request
+from fastapi.responses import JSONResponse
+from pydantic import ValidationError
+import traceback
 from .logging import get_logger
 
-logger = get_logger()
+logger = get_logger('error_handler')
 
-class GenomicsError(Exception):
-    """Base exception class for genomics application"""
-    def __init__(self, message: str, error_code: str, details: Optional[Dict[str, Any]] = None):
+class ServiceError(Exception):
+    """Base class for service errors"""
+    def __init__(self, message: str, status_code: int = 500, details: Optional[Dict[str, Any]] = None):
+        super().__init__(message)
         self.message = message
-        self.error_code = error_code
+        self.status_code = status_code
         self.details = details or {}
-        super().__init__(self.message)
 
-class DataValidationError(GenomicsError):
-    """Raised when data validation fails"""
+class ValidationServiceError(ServiceError):
+    """Validation error"""
     def __init__(self, message: str, details: Optional[Dict[str, Any]] = None):
-        super().__init__(message, "VALIDATION_ERROR", details)
+        super().__init__(message, status_code=422, details=details)
 
-class ModelPredictionError(GenomicsError):
-    """Raised when model prediction fails"""
+class NotFoundServiceError(ServiceError):
+    """Resource not found error"""
     def __init__(self, message: str, details: Optional[Dict[str, Any]] = None):
-        super().__init__(message, "PREDICTION_ERROR", details)
+        super().__init__(message, status_code=404, details=details)
 
-class DatabaseError(GenomicsError):
-    """Raised when database operations fail"""
+class AuthenticationError(ServiceError):
+    """Authentication error"""
     def __init__(self, message: str, details: Optional[Dict[str, Any]] = None):
-        super().__init__(message, "DATABASE_ERROR", details)
+        super().__init__(message, status_code=401, details=details)
 
-def handle_error(error: Exception, service: str) -> HTTPException:
-    """Convert application errors to HTTP exceptions and log them"""
-    if isinstance(error, GenomicsError):
-        status_code = {
-            "VALIDATION_ERROR": 400,
-            "PREDICTION_ERROR": 500,
-            "DATABASE_ERROR": 503
-        }.get(error.error_code, 500)
-        
-        # Log the error
-        logger.log_error(service, error, error.details)
-        
-        return HTTPException(
-            status_code=status_code,
-            detail={
-                "error_code": error.error_code,
-                "message": error.message,
-                "details": error.details
+class AuthorizationError(ServiceError):
+    """Authorization error"""
+    def __init__(self, message: str, details: Optional[Dict[str, Any]] = None):
+        super().__init__(message, status_code=403, details=details)
+
+async def error_handler(request: Request, call_next: Callable):
+    """Middleware to handle errors"""
+    try:
+        return await call_next(request)
+    except Exception as exc:
+        return handle_exception(exc, request)
+
+def handle_exception(exc: Exception, request: Request) -> JSONResponse:
+    """Handle different types of exceptions"""
+    
+    # Get request details for logging
+    request_details = {
+        'method': request.method,
+        'url': str(request.url),
+        'client_host': request.client.host if request.client else None,
+        'headers': dict(request.headers)
+    }
+    
+    if isinstance(exc, ServiceError):
+        logger.error(
+            f"Service error: {exc.message}",
+            extra={
+                'status_code': exc.status_code,
+                'details': exc.details,
+                'request': request_details
             }
         )
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={
+                'error': exc.message,
+                'details': exc.details,
+                'status_code': exc.status_code
+            }
+        )
+    
+    elif isinstance(exc, ValidationError):
+        logger.error(
+            "Validation error",
+            extra={
+                'errors': exc.errors(),
+                'request': request_details
+            }
+        )
+        return JSONResponse(
+            status_code=422,
+            content={
+                'error': "Validation error",
+                'details': exc.errors(),
+                'status_code': 422
+            }
+        )
+    
+    elif isinstance(exc, HTTPException):
+        logger.error(
+            f"HTTP error: {exc.detail}",
+            extra={
+                'status_code': exc.status_code,
+                'request': request_details
+            }
+        )
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={
+                'error': exc.detail,
+                'status_code': exc.status_code
+            }
+        )
+    
     else:
-        # Log unexpected errors
-        logger.log_error(service, error)
-        
-        return HTTPException(
+        # Unexpected error
+        logger.error(
+            "Unexpected error",
+            exc_info=True,
+            extra={'request': request_details}
+        )
+        return JSONResponse(
             status_code=500,
-            detail={
-                "error_code": "INTERNAL_ERROR",
-                "message": "An unexpected error occurred",
-                "details": {"error_type": type(error).__name__}
+            content={
+                'error': "Internal server error",
+                'status_code': 500
             }
         )
 
-def validate_patient_data(data: Dict[str, Any]):
-    """Validate patient data"""
-    required_fields = ['id', 'name', 'age']
-    missing_fields = [field for field in required_fields if field not in data]
-    
-    if missing_fields:
-        raise DataValidationError(
-            "Missing required fields",
-            {"missing_fields": missing_fields}
-        )
-    
-    if not isinstance(data.get('age'), (int, float)) or data['age'] < 0 or data['age'] > 150:
-        raise DataValidationError(
-            "Invalid age value",
-            {"age": data.get('age')}
-        )
+def setup_error_handling(app):
+    """Set up error handling for FastAPI app"""
+    app.middleware('http')(error_handler)
 
-def validate_genomic_data(data: Dict[str, Any]):
-    """Validate genomic data"""
-    if not isinstance(data, dict):
-        raise DataValidationError(
-            "Genomic data must be a dictionary",
-            {"data_type": type(data).__name__}
-        )
-    
-    # Add more specific validation as needed
-    pass
-
-def validate_medical_history(data: Dict[str, Any]):
-    """Validate medical history data"""
-    if not isinstance(data, dict):
-        raise DataValidationError(
-            "Medical history must be a dictionary",
-            {"data_type": type(data).__name__}
-        )
-    
-    # Add more specific validation as needed
-    pass
+# Example usage:
+# from fastapi import FastAPI
+# app = FastAPI()
+# setup_error_handling(app)
+#
+# @app.get("/items/{item_id}")
+# async def get_item(item_id: str):
+#     if not item_exists(item_id):
+#         raise NotFoundServiceError(f"Item {item_id} not found")
+#     return get_item_data(item_id)
