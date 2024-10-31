@@ -1,95 +1,148 @@
 #!/usr/bin/env python3
+
 import sys
-import subprocess
 import pkg_resources
-from typing import List, Tuple
-import importlib
+import subprocess
+import os
+import requests
+import json
+from typing import List, Dict, Any
+import logging
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 def check_python_version():
     """Check Python version"""
-    print("\nChecking Python version...")
-    required = (3, 10)
-    current = sys.version_info[:2]
+    required_version = (3, 8)
+    current_version = sys.version_info[:2]
     
-    if current >= required:
-        print(f"✅ Python version {'.'.join(map(str, current))} meets minimum requirement")
+    if current_version < required_version:
+        logger.error(
+            f"Python {required_version[0]}.{required_version[1]} or higher is required"
+        )
+        return False
+    return True
+
+def check_dependencies():
+    """Check installed dependencies"""
+    try:
+        requirements = pkg_resources.parse_requirements(
+            open('requirements.txt').readlines()
+        )
+        pkg_resources.working_set.resolve(requirements)
         return True
-    else:
-        print(f"❌ Python version {'.'.join(map(str, current))} does not meet minimum requirement of {'.'.join(map(str, required))}")
+    except Exception as e:
+        logger.error(f"Dependency check failed: {str(e)}")
         return False
 
-def check_dependencies() -> List[Tuple[str, bool]]:
-    """Check all dependencies are installed"""
-    print("\nChecking dependencies...")
-    results = []
-    
-    with open('requirements.txt') as f:
-        requirements = [line.strip() for line in f if line.strip() and not line.startswith('#')]
-    
-    for req in requirements:
-        try:
-            # Remove version specifier
-            package = req.split('==')[0]
-            importlib.import_module(package.replace('-', '_'))
-            results.append((req, True))
-        except ImportError:
-            results.append((req, False))
-    
-    return results
-
-def check_java():
-    """Check Java installation"""
-    print("\nChecking Java installation...")
+def check_aws_credentials():
+    """Check AWS credentials"""
     try:
-        result = subprocess.run(['java', '-version'], capture_output=True, text=True)
-        if result.returncode == 0:
-            print("✅ Java is installed")
-            return True
-        else:
-            print("❌ Java is not installed")
-            return False
-    except FileNotFoundError:
-        print("❌ Java is not installed")
+        import boto3
+        sts = boto3.client('sts')
+        sts.get_caller_identity()
+        return True
+    except Exception as e:
+        logger.error(f"AWS credentials check failed: {str(e)}")
+        return False
+
+def check_directories():
+    """Check required directories"""
+    required_dirs = ['logs', 'data', 'models', 'tests/data']
+    missing_dirs = []
+    
+    for dir_path in required_dirs:
+        if not os.path.exists(dir_path):
+            missing_dirs.append(dir_path)
+    
+    if missing_dirs:
+        logger.error(f"Missing directories: {', '.join(missing_dirs)}")
+        return False
+    return True
+
+def check_environment_variables():
+    """Check environment variables"""
+    required_vars = [
+        'ENV',
+        'AWS_REGION',
+        'DYNAMODB_ENDPOINT',
+        'JWT_SECRET'
+    ]
+    missing_vars = []
+    
+    for var in required_vars:
+        if not os.getenv(var):
+            missing_vars.append(var)
+    
+    if missing_vars:
+        logger.error(f"Missing environment variables: {', '.join(missing_vars)}")
+        return False
+    return True
+
+def check_services():
+    """Check if services are running"""
+    services = [
+        ('http://localhost:8080/health', 'Patient Management'),
+        ('http://localhost:8083/health', 'Treatment Prediction'),
+        ('http://localhost:8084/health', 'Data Ingestion')
+    ]
+    
+    failed_services = []
+    for url, name in services:
+        try:
+            response = requests.get(url)
+            if response.status_code != 200:
+                failed_services.append(name)
+        except:
+            failed_services.append(name)
+    
+    if failed_services:
+        logger.error(f"Failed services: {', '.join(failed_services)}")
+        return False
+    return True
+
+def check_database():
+    """Check database connection"""
+    try:
+        import boto3
+        dynamodb = boto3.client('dynamodb', endpoint_url=os.getenv('DYNAMODB_ENDPOINT'))
+        dynamodb.list_tables()
+        return True
+    except Exception as e:
+        logger.error(f"Database check failed: {str(e)}")
         return False
 
 def main():
-    """Run all verification checks"""
-    print("=== Verifying System Setup ===")
+    """Run all checks"""
+    checks = [
+        ("Python Version", check_python_version),
+        ("Dependencies", check_dependencies),
+        ("AWS Credentials", check_aws_credentials),
+        ("Directories", check_directories),
+        ("Environment Variables", check_environment_variables),
+        ("Database", check_database),
+        ("Services", check_services)
+    ]
     
-    # Check Python version
-    python_ok = check_python_version()
+    failed_checks = []
     
-    # Check Java
-    java_ok = check_java()
+    for name, check_func in checks:
+        logger.info(f"Checking {name}...")
+        try:
+            if not check_func():
+                failed_checks.append(name)
+        except Exception as e:
+            logger.error(f"Check {name} failed with error: {str(e)}")
+            failed_checks.append(name)
     
-    # Check dependencies
-    results = check_dependencies()
-    deps_ok = all(r[1] for r in results)
-    
-    # Print dependency results
-    print("\nDependency Status:")
-    for package, installed in results:
-        status = "✅" if installed else "❌"
-        print(f"{status} {package}")
-    
-    # Print summary
-    print("\n=== Setup Verification Summary ===")
-    all_ok = python_ok and java_ok and deps_ok
-    
-    if all_ok:
-        print("\n✅ All requirements are satisfied!")
-        print("You can now run the system using: python run_system.py")
+    if failed_checks:
+        logger.error(f"Setup verification failed. Failed checks: {', '.join(failed_checks)}")
+        sys.exit(1)
     else:
-        print("\n❌ Some requirements are not met:")
-        if not python_ok:
-            print("- Python version requirement not met")
-        if not java_ok:
-            print("- Java is not installed")
-        if not deps_ok:
-            print("- Some Python packages are missing")
-        print("\nPlease install missing requirements and try again.")
-    
-    return 0 if all_ok else 1
+        logger.info("All checks passed successfully!")
+        sys.exit(0)
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()
