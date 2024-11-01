@@ -9,6 +9,7 @@ import json
 from functools import wraps
 import time
 import traceback
+from contextlib import contextmanager  # Add this import
 from config import config
 
 class CustomJsonFormatter(logging.Formatter):
