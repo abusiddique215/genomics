@@ -1,56 +1,170 @@
 #!/bin/bash
 
-set -x  # Add this line for verbose output
+# Exit on error
+set -e
 
-# Navigate to the project directory
-cd "$(dirname "$0")"
+# Function to print messages
+print_message() {
+    echo "===> $1"
+}
 
-# Activate the virtual environment
-source venv/bin/activate
+# Function to check if a command exists
+check_command() {
+    if ! command -v $1 &> /dev/null; then
+        print_message "Error: $1 is required but not installed."
+        exit 1
+    fi
+}
 
-# Set environment variables
-set -a
-source .env
-set +a
+# Function to start DynamoDB
+start_dynamodb() {
+    print_message "Starting DynamoDB..."
+    ./start_dynamodb_local.sh
+}
 
-# Add the project root to PYTHONPATH
-export PYTHONPATH="$PYTHONPATH:$(pwd)"
+# Function to verify AWS setup
+verify_aws() {
+    print_message "Verifying AWS setup..."
+    python setup_aws.py --verify
+}
 
-# Check AWS permissions
-echo "Checking AWS permissions..."
-python verify_iam_setup.py
+# Function to generate test data
+generate_test_data() {
+    print_message "Generating test data..."
+    python generate_mock_patients.py --count 100 --output data/test_patients.json --treatment-history --pretty
+}
 
-# Start each service individually
-echo "Starting dashboard service..."
-python -m services.dashboard.main &
-DASHBOARD_PID=$!
+# Function to start services
+start_services() {
+    print_message "Starting services..."
+    python start_services.py "$@"
+}
 
-echo "Starting patient_management service..."
-python -m services.patient_management.main &
-PATIENT_MANAGEMENT_PID=$!
+# Function to verify services
+verify_services() {
+    print_message "Verifying services..."
+    python verify_services.py
+}
 
-echo "Starting rag_pipeline service..."
-python -m services.rag_pipeline.main &
-RAG_PIPELINE_PID=$!
+# Function to show status
+show_status() {
+    print_message "System Status"
+    echo "DynamoDB: $(curl -s http://localhost:8000 > /dev/null && echo "Running" || echo "Stopped")"
+    echo "Patient Management: $(curl -s http://localhost:8080/health > /dev/null && echo "Healthy" || echo "Unhealthy")"
+    echo "Treatment Prediction: $(curl -s http://localhost:8083/health > /dev/null && echo "Healthy" || echo "Unhealthy")"
+    echo "Data Ingestion: $(curl -s http://localhost:8084/health > /dev/null && echo "Healthy" || echo "Unhealthy")"
+}
 
-echo "Starting model_training service..."
-python -m services.model_training.main &
-MODEL_TRAINING_PID=$!
+# Function to clean up
+cleanup() {
+    print_message "Cleaning up..."
+    pkill -f "DynamoDBLocal" || true
+    pkill -f "uvicorn" || true
+    print_message "Cleanup complete"
+}
 
-echo "Starting Streamlit dashboard..."
-streamlit run services/dashboard/streamlit_app.py &
-STREAMLIT_PID=$!
+# Function to show help
+show_help() {
+    echo "Usage: $0 [options]"
+    echo "Options:"
+    echo "  start       Start the system"
+    echo "  stop        Stop the system"
+    echo "  restart     Restart the system"
+    echo "  status      Show system status"
+    echo "  setup       Set up the system"
+    echo "  clean       Clean up resources"
+    echo "  test        Run tests"
+    echo "  dev         Start in development mode"
+    echo "  help        Show this help message"
+}
 
-# Wait for all services to start
-sleep 10
+# Function to run tests
+run_tests() {
+    print_message "Running tests..."
+    pytest tests/ -v
+}
 
-# Check if services are running
-ps -p $DASHBOARD_PID > /dev/null && echo "Dashboard service is running" || echo "Dashboard service failed to start"
-ps -p $PATIENT_MANAGEMENT_PID > /dev/null && echo "Patient Management service is running" || echo "Patient Management service failed to start"
-ps -p $RAG_PIPELINE_PID > /dev/null && echo "RAG Pipeline service is running" || echo "RAG Pipeline service failed to start"
-ps -p $MODEL_TRAINING_PID > /dev/null && echo "Model Training service is running" || echo "Model Training service failed to start"
-ps -p $STREAMLIT_PID > /dev/null && echo "Streamlit dashboard is running" || echo "Streamlit dashboard failed to start"
+# Function to set up the system
+setup_system() {
+    print_message "Setting up the system..."
+    
+    # Check requirements
+    check_command python3
+    check_command pip
+    check_command java
+    
+    # Create virtual environment if it doesn't exist
+    if [ ! -d "venv" ]; then
+        print_message "Creating virtual environment..."
+        python3 -m venv venv
+    fi
+    
+    # Activate virtual environment
+    source venv/bin/activate
+    
+    # Install dependencies
+    print_message "Installing dependencies..."
+    pip install -r requirements.txt
+    
+    # Set up AWS resources
+    print_message "Setting up AWS resources..."
+    python setup_aws.py
+    
+    # Create necessary directories
+    mkdir -p data
+    mkdir -p logs
+    mkdir -p models
+    
+    # Generate test data
+    generate_test_data
+    
+    print_message "Setup complete!"
+}
 
-# Keep the script running
-echo "All services started. Press Ctrl+C to stop all services."
-wait
+# Trap cleanup on exit
+trap cleanup EXIT
+
+# Main execution
+case "$1" in
+    start)
+        start_dynamodb
+        start_services "${@:2}"
+        verify_services
+        show_status
+        ;;
+    stop)
+        cleanup
+        ;;
+    restart)
+        cleanup
+        start_dynamodb
+        start_services "${@:2}"
+        verify_services
+        show_status
+        ;;
+    status)
+        show_status
+        ;;
+    setup)
+        setup_system
+        ;;
+    clean)
+        cleanup
+        ;;
+    test)
+        run_tests
+        ;;
+    dev)
+        start_dynamodb
+        start_services --dev
+        verify_services
+        show_status
+        ;;
+    help)
+        show_help
+        ;;
+    *)
+        show_help
+        exit 1
+        ;;
+esac

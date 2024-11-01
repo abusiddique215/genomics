@@ -31,37 +31,95 @@ env/
 .vscode/
 *.swp
 *.swo
-.project
-.pydevproject
-.settings/
-
-# DynamoDB Local
-shared-local-instance.db
-DynamoDBLocal.jar
-DynamoDBLocal_lib/
-dynamodb-local-metadata.json
+*~
 
 # Logs
-*.log
 logs/
-log/
+*.log
+
+# Local development
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# DynamoDB Local
+DynamoDBLocal.jar
+DynamoDBLocal_lib/
+shared-local-instance.db
+*.db
+
+# Data
+data/
+!data/.gitkeep
+
+# Models
+models/
+!models/.gitkeep
 
 # Test coverage
 .coverage
-coverage.xml
 htmlcov/
+coverage.xml
+.pytest_cache/
 
-# Documentation
-site/
-docs/_build/
+# Docker
+.docker/
+
+# AWS
+.aws/
+*.pem
 
 # System specific
 .DS_Store
 Thumbs.db
 
 # Project specific
-*.bak
+test_data.csv
+dynamodb_local_latest.tar.gz
+*.tfstate
+*.tfstate.backup
+.terraform/
+terraform.tfvars
+
+# Temporary files
 *.tmp
 *.temp
-test_data/
-.pytest_cache/
+*.bak
+
+# Generated files
+generated/
+output/
+
+# Credentials
+credentials.json
+*.key
+*.pem
+*.crt
+*.cer
+*.p12
+
+# Documentation build
+docs/_build/
+site/
+
+# Node modules (if using any JavaScript tools)
+node_modules/
+
+# Compiled files
+*.pyc
+*.pyo
+*.pyd
+*.so
+*.dll
+*.dylib
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Environment variables
+.env*
+!.env.example
+
+# Local configuration
+config.local.yml
