@@ -1,0 +1,22 @@
+{
+  "id": "TEST001",
+  "name": "John Doe",
+  "age": 45,
+  "gender": "M",
+  "genomic_data": {
+    "gene_variants": {
+      "BRCA1": "variant1",
+      "BRCA2": "variant2"
+    },
+    "mutation_scores": {
+      "BRCA1": "0.8",
+      "BRCA2": "0.6"
+    }
+  },
+  "medical_history": {
+    "conditions": ["Hypertension"],
+    "treatments": ["ACE Inhibitors"],
+    "allergies": ["Penicillin"],
+    "medications": ["Lisinopril"]
+  }
+}
