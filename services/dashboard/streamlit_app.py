@@ -200,6 +200,6 @@ elif page == "Progress Tracking":
     else:
         st.warning("No patients found")
 
-# Add auto-refresh
+# Add refresh button
 if st.button("Refresh Data"):
-    st.experimental_rerun()
+    st.rerun()
