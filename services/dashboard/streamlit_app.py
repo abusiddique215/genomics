@@ -148,15 +148,19 @@ elif page == "Treatment Analysis":
     st.title("Treatment Analysis")
     
     patients = fetch_patients()
+    st.write(f"Found {len(patients)} patients")
+    
     if patients:
         recommendations = [
             get_treatment_recommendation(p['id']) for p in patients
         ]
+        st.write(f"Got {len(recommendations)} recommendations")
         
         # Create visualization data
         treatment_data = []
         for p, r in zip(patients, recommendations):
             if r:
+                st.write(f"Processing recommendation for patient {p['id']}: {r}")
                 treatment_data.append({
                     'patient_id': p['id'],
                     'treatment': r.get('recommended_treatment', 'Unknown'),
@@ -164,18 +168,24 @@ elif page == "Treatment Analysis":
                     'confidence': r.get('confidence_level', 'Unknown')
                 })
         
+        st.write(f"Created {len(treatment_data)} treatment data entries")
+        
         if treatment_data:
             df = pd.DataFrame(treatment_data)
+            st.write("Treatment Data DataFrame:")
+            st.dataframe(df)
             
             # Treatment distribution
             st.subheader("Treatment Distribution")
             fig = px.pie(df, names='treatment')
-            st.plotly_chart(fig)
+            st.plotly_chart(fig, use_container_width=True)
             
             # Efficacy distribution
             st.subheader("Treatment Efficacy Distribution")
             fig = px.histogram(df, x='efficacy')
-            st.plotly_chart(fig)
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.warning("No treatment data available")
 
 # Progress Tracking page
 elif page == "Progress Tracking":
