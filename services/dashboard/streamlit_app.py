@@ -6,7 +6,7 @@ import plotly.express as px
 from datetime import datetime
 
 # Configuration
-API_BASE_URL = "http://localhost:8080"
+API_BASE_URL = "http://localhost:8086"  # Updated port
 
 # Page config
 st.set_page_config(
