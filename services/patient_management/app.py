@@ -6,6 +6,7 @@ from typing import Dict, Optional
 from datetime import datetime
 import json
 from decimal import Decimal
+import requests
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
@@ -110,9 +111,8 @@ async def get_treatment_recommendation(patient_id: str):
         patient = await get_patient(patient_id)
         
         # Get treatment prediction from prediction service
-        import requests
         response = requests.post(
-            "http://localhost:8083/predict",
+            "http://localhost:8085/predict",  # Updated port to 8085
             json={
                 "genomic_data": patient.get("genomic_data", {}),
                 "medical_history": patient.get("medical_history", {})
@@ -120,6 +120,7 @@ async def get_treatment_recommendation(patient_id: str):
         )
         
         if response.status_code != 200:
+            logger.error(f"Error from prediction service: {response.text}")
             raise HTTPException(status_code=500, detail="Error getting treatment recommendation")
             
         recommendation = response.json()
